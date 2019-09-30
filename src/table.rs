@@ -18,6 +18,7 @@ const NUM_OF_TOP_N: usize = 30;
 #[derive(Debug, Default)]
 pub struct Table {
     columns: Vec<Column>,
+    event_ids: HashMap<u64, usize>,
 }
 
 impl Table {
@@ -34,7 +35,10 @@ impl Table {
                 DataType::DateTime(_) => Column::new::<NaiveDateTime>(),
             })
             .collect();
-        Self { columns }
+        Self { 
+            columns,
+            event_ids: HashMap::new(),
+        }
     }
 
     /// Moves all the rows of `other` intot `self`, leaving `other` empty.
@@ -54,6 +58,7 @@ impl Table {
         schema: &Schema,
         values: &ByteRecord,
         labels: Option<&HashMap<usize, HashMap<String, u32>>>,
+        event_id: u64
     ) -> Result<(), &'static str> {
         if self.columns.len() != schema.fields().len() {
             return Err("# of fields in the format is different from # of columns in the table");
@@ -107,6 +112,9 @@ impl Table {
                 return Err("unknown column type");
             }
         }
+        if !self.event_ids.contains_key(&event_id) {
+            self.event_ids.insert(event_id, self.event_ids.len());
+        }
         Ok(())
     }
 
@@ -153,10 +161,10 @@ impl TryFrom<Vec<Column>> for Table {
         let len = if let Some(col) = columns.first() {
             col.len()
         } else {
-            return Ok(Self { columns });
+            return Ok(Self { columns, event_ids: HashMap::new() });
         };
         if columns.iter().skip(1).all(|e| e.len() == len) {
-            Ok(Self { columns })
+            Ok(Self { columns, event_ids: HashMap::new() })
         } else {
             Err("columns must have the same length")
         }
