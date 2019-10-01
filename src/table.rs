@@ -15,7 +15,9 @@ use crate::{DataType, Schema};
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const NUM_OF_TOP_N: usize = 30;
 
-#[derive(Debug, Default)]
+type ColumnOfOneRow = DescriptionElement;
+
+#[derive(Debug, Default, Clone)]
 pub struct Table {
     columns: Vec<Column>,
     event_ids: HashMap<u64, usize>,
@@ -35,7 +37,7 @@ impl Table {
                 DataType::DateTime(_) => Column::new::<NaiveDateTime>(),
             })
             .collect();
-        Self { 
+        Self {
             columns,
             event_ids: HashMap::new(),
         }
@@ -58,7 +60,7 @@ impl Table {
         schema: &Schema,
         values: &ByteRecord,
         labels: Option<&HashMap<usize, HashMap<String, u32>>>,
-        event_id: u64
+        event_id: u64,
     ) -> Result<(), &'static str> {
         if self.columns.len() != schema.fields().len() {
             return Err("# of fields in the format is different from # of columns in the table");
@@ -112,9 +114,9 @@ impl Table {
                 return Err("unknown column type");
             }
         }
-        if !self.event_ids.contains_key(&event_id) {
-            self.event_ids.insert(event_id, self.event_ids.len());
-        }
+        let len = self.event_ids.len();
+        self.event_ids.entry(event_id).or_insert(len);
+
         Ok(())
     }
 
@@ -152,6 +154,56 @@ impl Table {
             .map(|column| column.describe())
             .collect()
     }
+
+    pub fn get_index_of_event(&self, eventid: u64) -> Option<&usize> {
+        self.event_ids.get(&eventid)
+    }
+
+    // TODO : add error handling
+    pub fn push_one_row(
+        &mut self,
+        one_row: Vec<ColumnOfOneRow>,
+        event_id: u64,
+    ) -> Result<(), &'static str> {
+        for (col, val) in izip!(self.columns.iter_mut(), one_row) {
+            match val {
+                ColumnOfOneRow::Int(v) => {
+                    if let Some(c) = col.values_mut::<i64>() {
+                        c.push(v)
+                    };
+                }
+                ColumnOfOneRow::UInt(v) => {
+                    if let Some(c) = col.values_mut::<u32>() {
+                        c.push(v)
+                    };
+                }
+                ColumnOfOneRow::Float(v) => {
+                    if let Some(c) = col.values_mut::<f64>() {
+                        c.push(v)
+                    };
+                }
+                ColumnOfOneRow::Text(v) => {
+                    if let Some(c) = col.values_mut::<String>() {
+                        c.push(v)
+                    };
+                }
+                ColumnOfOneRow::IpAddr(v) => {
+                    if let Some(c) = col.values_mut::<IpAddr>() {
+                        c.push(v)
+                    };
+                }
+                ColumnOfOneRow::DateTime(v) => {
+                    if let Some(c) = col.values_mut::<NaiveDateTime>() {
+                        c.push(v)
+                    };
+                }
+                _ => (),
+            }
+        }
+        let len = self.event_ids.len();
+        self.event_ids.entry(event_id).or_insert(len);
+        Ok(())
+    }
 }
 
 impl TryFrom<Vec<Column>> for Table {
@@ -161,10 +213,16 @@ impl TryFrom<Vec<Column>> for Table {
         let len = if let Some(col) = columns.first() {
             col.len()
         } else {
-            return Ok(Self { columns, event_ids: HashMap::new() });
+            return Ok(Self {
+                columns,
+                event_ids: HashMap::new(),
+            });
         };
         if columns.iter().skip(1).all(|e| e.len() == len) {
-            Ok(Self { columns, event_ids: HashMap::new() })
+            Ok(Self {
+                columns,
+                event_ids: HashMap::new(),
+            })
         } else {
             Err("columns must have the same length")
         }
@@ -349,6 +407,44 @@ impl Column {
             panic!("invalid column type");
         }
         desc
+    }
+}
+
+impl Clone for Column {
+    fn clone(&self) -> Self {
+        if self.inner.is::<ColumnData<i64>>() {
+            let cd: &ColumnData<i64> = self.values().unwrap();
+            Self {
+                inner: Box::new(cd.clone()),
+            }
+        } else if self.inner.is::<ColumnData<f64>>() {
+            let cd: &ColumnData<f64> = self.values().unwrap();
+            Self {
+                inner: Box::new(cd.clone()),
+            }
+        } else if self.inner.is::<ColumnData<u32>>() {
+            let cd: &ColumnData<u32> = self.values().unwrap();
+            Self {
+                inner: Box::new(cd.clone()),
+            }
+        } else if self.inner.is::<ColumnData<String>>() {
+            let cd: &ColumnData<String> = self.values().unwrap();
+            Self {
+                inner: Box::new(cd.clone()),
+            }
+        } else if self.inner.is::<ColumnData<IpAddr>>() {
+            let cd: &ColumnData<IpAddr> = self.values().unwrap();
+            Self {
+                inner: Box::new(cd.clone()),
+            }
+        } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
+            let cd: &ColumnData<NaiveDateTime> = self.values().unwrap();
+            Self {
+                inner: Box::new(cd.clone()),
+            }
+        } else {
+            panic!("invalid column type")
+        }
     }
 }
 
@@ -594,7 +690,9 @@ mod tests {
         let c3 = Column::from(c3_v);
         let c4 = Column::from(c4_v);
         let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4];
-        let table = Table::try_from(c_v).expect("invalid columns");
+        let table_org = Table::try_from(c_v).expect("invalid columns");
+        let table = table_org.clone();
+        move_table_add_row(table_org);
         let ds = table.describe();
 
         assert_eq!(4, ds[0].unique_count);
@@ -611,5 +709,24 @@ mod tests {
             DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
             ds[4].get_top_n_deref().unwrap()[0].0
         );
+    }
+
+    pub fn move_table_add_row(mut table: Table) {
+        let one_row: Vec<ColumnOfOneRow> = vec![
+            ColumnOfOneRow::Int(3),
+            ColumnOfOneRow::Text("Hundred".to_string()),
+            ColumnOfOneRow::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 100))),
+            ColumnOfOneRow::Float(100.100),
+            ColumnOfOneRow::DateTime(NaiveDate::from_ymd(2019, 10, 10).and_hms(10, 10, 10)),
+        ];
+        table
+            .push_one_row(one_row, 1)
+            .expect("Failure in adding a row");
+        let ds = table.describe();
+        assert_eq!(
+            DescriptionElement::Int(3),
+            ds[0].get_top_n_deref().unwrap()[0].0
+        );
+        assert_eq!(4, ds[0].get_top_n_deref().unwrap()[0].1);
     }
 }
