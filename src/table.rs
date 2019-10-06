@@ -1,6 +1,7 @@
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use csv::ByteRecord;
 use itertools::izip;
+use serde::{Deserialize, Serialize};
 use statistical::*;
 use std::any::Any;
 use std::collections::HashMap;
@@ -368,12 +369,12 @@ impl Column {
             let cd: &ColumnData<f64> = self.values().unwrap();
             describe_min_max!(cd, desc, DescriptionElement::Float);
 
-            let min = match desc.get_min_deref().unwrap() {
+            let min = match desc.get_min().unwrap() {
                 DescriptionElement::Float(f) => f,
                 _ => panic!(), // TODO: add error handling
             };
 
-            let max = match desc.get_max_deref().unwrap() {
+            let max = match desc.get_max().unwrap() {
                 DescriptionElement::Float(f) => f,
                 _ => panic!(), // TODO: add error handling
             };
@@ -386,7 +387,7 @@ impl Column {
             describe_mean_deviation!(cd, desc);
         } else if self.inner.is::<ColumnData<u32>>() {
             let cd: &ColumnData<u32> = self.values().unwrap();
-            describe_all!(cd, desc, u32, DescriptionElement::UInt);
+            describe_top_n!(cd, desc, DescriptionElement::UInt);
         } else if self.inner.is::<ColumnData<String>>() {
             let cd: &ColumnData<String> = self.values().unwrap();
             describe_top_n!(cd, desc, DescriptionElement::Text);
@@ -448,7 +449,7 @@ impl Clone for Column {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum DescriptionElement {
     Int(i64),
     UInt(u32),
@@ -473,7 +474,7 @@ impl fmt::Display for DescriptionElement {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Description {
     count: usize,
     unique_count: usize,
@@ -497,23 +498,31 @@ impl fmt::Display for Description {
             writeln!(f, "   s-deviation: {}", self.get_s_deviation().unwrap())?;
         }
         if self.min.is_some() {
-            writeln!(f, "   min: {}", self.get_min_deref().unwrap())?;
+            writeln!(f, "   min: {}", self.get_min().unwrap())?;
         }
         if self.max.is_some() {
-            writeln!(f, "   max: {}", self.get_max_deref().unwrap())?;
+            writeln!(f, "   max: {}", self.get_max().unwrap())?;
         }
         writeln!(f, "   Top N")?;
-        for (d, c) in self.get_top_n_deref().unwrap() {
+        for (d, c) in self.get_top_n().unwrap() {
             writeln!(f, "      data: {}      count: {}", d, c)?;
         }
         if self.mode.is_some() {
-            writeln!(f, "   mode: {}", self.get_mode_deref().unwrap())?;
+            writeln!(f, "   mode: {}", self.get_mode().unwrap())?;
         }
         writeln!(f, "End of Description")
     }
 }
 
 impl Description {
+    pub fn get_count(&self) -> usize {
+        self.count
+    }
+
+    pub fn get_unique_count(&self) -> usize {
+        self.unique_count
+    }
+
     pub fn get_mean(&self) -> Result<f64, &'static str> {
         self.mean.ok_or("Mean does not exist!")
     }
@@ -522,19 +531,19 @@ impl Description {
         self.s_deviation.ok_or("S-deviation does not exist!")
     }
 
-    pub fn get_min_deref(&self) -> Result<&DescriptionElement, &'static str> {
+    pub fn get_min(&self) -> Result<&DescriptionElement, &'static str> {
         self.min.as_ref().ok_or("Min does not exist!")
     }
 
-    pub fn get_max_deref(&self) -> Result<&DescriptionElement, &'static str> {
+    pub fn get_max(&self) -> Result<&DescriptionElement, &'static str> {
         self.max.as_ref().ok_or("Max does not exist!")
     }
 
-    pub fn get_top_n_deref(&self) -> Result<&Vec<(DescriptionElement, usize)>, &'static str> {
+    pub fn get_top_n(&self) -> Result<&Vec<(DescriptionElement, usize)>, &'static str> {
         self.top_n.as_ref().ok_or("Top N does not exist!")
     }
 
-    pub fn get_mode_deref(&self) -> Result<&DescriptionElement, &'static str> {
+    pub fn get_mode(&self) -> Result<&DescriptionElement, &'static str> {
         self.mode.as_ref().ok_or("Mode does not exist!")
     }
 }
@@ -683,13 +692,15 @@ mod tests {
             NaiveDate::from_ymd(2019, 9, 21).and_hms(8, 10, 11),
             NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
         ];
+        let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
 
         let c0 = Column::from(c0_v);
         let c1 = Column::from(c1_v);
         let c2 = Column::from(c2_v);
         let c3 = Column::from(c3_v);
         let c4 = Column::from(c4_v);
-        let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4];
+        let c5 = Column::from(c5_v);
+        let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
         let table_org = Table::try_from(c_v).expect("invalid columns");
         let table = table_org.clone();
         move_table_add_row(table_org);
@@ -698,16 +709,16 @@ mod tests {
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
             DescriptionElement::Text("111a qwer".to_string()),
-            *ds[1].get_mode_deref().unwrap()
+            *ds[1].get_mode().unwrap()
         );
         assert_eq!(
             DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
-            ds[2].get_top_n_deref().unwrap()[1].0
+            ds[2].get_top_n().unwrap()[1].0
         );
         assert_eq!(3, ds[3].unique_count);
         assert_eq!(
             DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
-            ds[4].get_top_n_deref().unwrap()[0].0
+            ds[4].get_top_n().unwrap()[0].0
         );
     }
 
@@ -723,10 +734,7 @@ mod tests {
             .push_one_row(one_row, 1)
             .expect("Failure in adding a row");
         let ds = table.describe();
-        assert_eq!(
-            DescriptionElement::Int(3),
-            ds[0].get_top_n_deref().unwrap()[0].0
-        );
-        assert_eq!(4, ds[0].get_top_n_deref().unwrap()[0].1);
+        assert_eq!(DescriptionElement::Int(3), ds[0].get_top_n().unwrap()[0].0);
+        assert_eq!(4, ds[0].get_top_n().unwrap()[0].1);
     }
 }
