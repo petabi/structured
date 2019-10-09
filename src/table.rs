@@ -357,7 +357,7 @@ impl Column {
     }
 
     pub fn describe(&self) -> Description {
-        let mut desc: Description = Default::default();
+        let mut desc = Description::default();
 
         if self.inner.is::<ColumnData<i64>>() {
             let cd: &ColumnData<i64> = self.values().unwrap();
@@ -547,23 +547,14 @@ impl Description {
 
 #[allow(clippy::ptr_arg)]
 fn count_sort<T: Clone + Eq + Hash>(cd: &ColumnData<T>) -> Vec<(T, usize)> {
-    let mut count: HashMap<T, usize> = HashMap::new();
+    let mut count: HashMap<&T, usize> = HashMap::new();
     let mut top_n: Vec<(T, usize)> = Vec::new();
-    for i in cd.iter() {
-        let key = count.get_mut(i);
-
-        match key {
-            None => {
-                let i_clone = i.clone();
-                count.insert(i_clone, 1);
-            }
-            Some(c) => {
-                *c += 1;
-            }
-        }
+    for i in cd {
+        let c = count.entry(i).or_insert(0);
+        *c += 1;
     }
-    for (k, v) in count.iter() {
-        top_n.push((k.clone(), *v));
+    for (k, v) in &count {
+        top_n.push(((*k).clone(), *v));
     }
     top_n.sort_unstable_by(|a, b| b.1.cmp(&a.1));
     top_n
