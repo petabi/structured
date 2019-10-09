@@ -150,10 +150,7 @@ impl Table {
     }
 
     pub fn describe(&self) -> Vec<Description> {
-        self.columns
-            .iter()
-            .map(|column| column.describe())
-            .collect()
+        self.columns.iter().map(Column::describe).collect()
     }
 
     pub fn get_index_of_event(&self, eventid: u64) -> Option<&usize> {
