@@ -259,11 +259,11 @@ macro_rules! describe_all {
 }
 
 macro_rules! describe_min_max {
-    ( $cd:expr, $d:expr, $t2:expr ) => {
+    ( $cd:expr, $d:expr, $t2:expr ) => {{
         let (min, max) = find_min_max($cd);
         $d.min = Some($t2(min));
         $d.max = Some($t2(max));
-    };
+    }};
 }
 
 macro_rules! describe_mean_deviation {
