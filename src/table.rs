@@ -1,6 +1,7 @@
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use csv::ByteRecord;
 use itertools::izip;
+use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use statistical::*;
 use std::any::Any;
@@ -566,7 +567,7 @@ fn describe_top_n_f64(
     min: f64,
     max: f64,
 ) -> (usize, Vec<(DescriptionElement, usize)>) {
-    let interval: f64 = (max - min) / (NUM_OF_FLOAT_INTERVALS as f64);
+    let interval: f64 = (max - min) / NUM_OF_FLOAT_INTERVALS.to_f64().expect("<= 100");
     let mut count: Vec<(usize, usize)> = vec![(0, 0); NUM_OF_FLOAT_INTERVALS];
 
     for (i, item) in count.iter_mut().enumerate().take(NUM_OF_FLOAT_INTERVALS) {
@@ -574,7 +575,7 @@ fn describe_top_n_f64(
     }
 
     for d in cd.iter() {
-        let mut slot = f64::floor((d - min) / interval) as usize;
+        let mut slot = ((d - min) / interval).floor().to_usize().expect("< 100");
         if slot == NUM_OF_FLOAT_INTERVALS {
             slot = NUM_OF_FLOAT_INTERVALS - 1;
         }
@@ -599,8 +600,8 @@ fn describe_top_n_f64(
         }
         top_n.push((
             DescriptionElement::FloatRange(
-                min + item.0 as f64 * interval,
-                min + (item.0 + 1) as f64 * interval,
+                min + (item.0).to_f64().expect("< 30") * interval,
+                min + (item.0 + 1).to_f64().expect("<= 30") * interval,
             ),
             item.1,
         ));
