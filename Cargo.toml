@@ -1,7 +1,10 @@
 [package]
 name = "structured"
 version = "0.1.0"
-authors = ["Min Kim <msk@dolbo.net>"]
+authors = [
+    "Min Kim <msk@dolbo.net>",
+    "Sehkone Kim <sehkone@petabi.com>",
+]
 edition = "2018"
 
 [dependencies]
