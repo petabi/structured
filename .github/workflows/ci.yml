@@ -20,10 +20,8 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
-    - name: Run coverage
+    - name: Generate coverage report
       if: matrix.os == 'ubuntu-18.04' && matrix.rust == 'stable'
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       run: |
         sudo apt-get install libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
         wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz
@@ -35,8 +33,11 @@ jobs:
         cd ../..
         rm -rf kcov-master
         for file in target/debug/structured-*; do [ -x "${file}" ] || continue; mkdir -p "target/cov/$(basename $file)"; ./kcov-build/usr/local/bin/kcov --exclude-pattern=/.cargo,/usr/lib --verify "target/cov/$(basename $file)" "$file"; done
-        bash <(curl -s https://codecov.io/bash)
-        echo "Uploaded code coverage"
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-18.04' && matrix.rust == 'stable'
+      uses: codecov/codecov-action@v1.0.2
+      with:
+        token: ${{secrets.CODECOV_TOKEN}}
     - name: Install components
       if: matrix.os == 'ubuntu-18.04' && matrix.rust == 'stable'
       run: rustup component add clippy rustfmt
