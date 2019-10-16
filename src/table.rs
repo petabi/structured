@@ -521,28 +521,28 @@ impl Description {
         self.unique_count
     }
 
-    pub fn get_mean(&self) -> Result<f64, &'static str> {
-        self.mean.ok_or("Mean does not exist!")
+    pub fn get_mean(&self) -> Option<f64> {
+        self.mean
     }
 
-    pub fn get_s_deviation(&self) -> Result<f64, &'static str> {
-        self.s_deviation.ok_or("S-deviation does not exist!")
+    pub fn get_s_deviation(&self) -> Option<f64> {
+        self.s_deviation
     }
 
-    pub fn get_min(&self) -> Result<&DescriptionElement, &'static str> {
-        self.min.as_ref().ok_or("Min does not exist!")
+    pub fn get_min(&self) -> Option<&DescriptionElement> {
+        self.min.as_ref()
     }
 
-    pub fn get_max(&self) -> Result<&DescriptionElement, &'static str> {
-        self.max.as_ref().ok_or("Max does not exist!")
+    pub fn get_max(&self) -> Option<&DescriptionElement> {
+        self.max.as_ref()
     }
 
-    pub fn get_top_n(&self) -> Result<&Vec<(DescriptionElement, usize)>, &'static str> {
-        self.top_n.as_ref().ok_or("Top N does not exist!")
+    pub fn get_top_n(&self) -> Option<&Vec<(DescriptionElement, usize)>> {
+        self.top_n.as_ref()
     }
 
-    pub fn get_mode(&self) -> Result<&DescriptionElement, &'static str> {
-        self.mode.as_ref().ok_or("Mode does not exist!")
+    pub fn get_mode(&self) -> Option<&DescriptionElement> {
+        self.mode.as_ref()
     }
 }
 
