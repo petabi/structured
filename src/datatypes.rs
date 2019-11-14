@@ -1,17 +1,17 @@
 use serde::{Deserialize, Serialize};
 
 /// Supported types.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Copy)]
 pub enum DataType {
     Int,
     Float,
-    DateTime(String),
+    DateTime,
     IpAddr,
     Enum,
     Str,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Field {
     data_type: DataType,
 }

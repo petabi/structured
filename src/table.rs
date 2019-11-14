@@ -1,5 +1,4 @@
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use csv::ByteRecord;
+use chrono::{NaiveDateTime, NaiveTime, Timelike};
 use itertools::izip;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -9,7 +8,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::hash::Hash;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::slice::Iter;
 
 use crate::{DataType, Schema};
@@ -26,6 +25,10 @@ pub struct Table {
 }
 
 impl Table {
+    pub fn new(columns: Vec<Column>, event_ids: HashMap<u64, usize>) -> Self {
+        Self { columns, event_ids }
+    }
+
     pub fn from_schema(schema: &Schema) -> Self {
         let columns = schema
             .fields()
@@ -36,7 +39,7 @@ impl Table {
                 DataType::Str => Column::new::<String>(),
                 DataType::Enum => Column::new::<u32>(),
                 DataType::IpAddr => Column::new::<IpAddr>(),
-                DataType::DateTime(_) => Column::new::<NaiveDateTime>(),
+                DataType::DateTime => Column::new::<NaiveDateTime>(),
             })
             .collect();
         Self {
@@ -55,71 +58,6 @@ impl Table {
         for (self_col, other_col) in self.columns.iter_mut().zip(other.columns.iter_mut()) {
             self_col.append(other_col);
         }
-    }
-
-    pub fn push(
-        &mut self,
-        schema: &Schema,
-        values: &ByteRecord,
-        labels: Option<&HashMap<usize, HashMap<String, u32>>>,
-        event_id: u64,
-    ) -> Result<(), &'static str> {
-        if self.columns.len() != schema.fields().len() {
-            return Err("# of fields in the format is different from # of columns in the table");
-        }
-        if self.columns.len() != values.len() {
-            return Err("# of values is different from # of columns in the table");
-        }
-        for (i, (col, fmt, val)) in izip!(
-            self.columns.iter_mut(),
-            schema.fields().iter(),
-            values.iter()
-        )
-        .enumerate()
-        {
-            let val: String = val.iter().map(|&c| c as char).collect();
-            if let Some(v) = col.values_mut::<i64>() {
-                v.push(val.parse::<i64>().unwrap_or_default());
-            } else if let Some(v) = col.values_mut::<f64>() {
-                v.push(val.parse::<f64>().unwrap_or_default());
-            } else if let Some(v) = col.values_mut::<u32>() {
-                let enum_value = labels.as_ref().map_or(0_u32, |label_map| {
-                    label_map
-                        .get(&i)
-                        .unwrap()
-                        .get(&val.to_string())
-                        .map_or(0, |val| *val)
-                });
-                v.push(enum_value);
-            } else if let Some(v) = col.values_mut::<String>() {
-                v.push(val);
-            } else if let Some(v) = col.values_mut::<IpAddr>() {
-                v.push(
-                    val.parse::<IpAddr>()
-                        .unwrap_or_else(|_| IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255))),
-                );
-            } else if let Some(v) = col.values_mut::<NaiveDateTime>() {
-                let fmt = if let DataType::DateTime(fmt) = &fmt.data_type() {
-                    fmt
-                } else {
-                    return Err("column type mismatch");
-                };
-                v.push(
-                    NaiveDateTime::parse_from_str(&val, fmt).unwrap_or_else(|_| {
-                        NaiveDateTime::new(
-                            NaiveDate::from_ymd(1, 1, 1),
-                            NaiveTime::from_hms(0, 0, 0),
-                        )
-                    }),
-                );
-            } else {
-                return Err("unknown column type");
-            }
-        }
-        let len = self.event_ids.len();
-        self.event_ids.entry(event_id).or_insert(len);
-
-        Ok(())
     }
 
     /// Returns an `Iterator` for columns.
@@ -311,6 +249,15 @@ impl Column {
         }
     }
 
+    pub fn with_data<T>(data: ColumnData<T>) -> Self
+    where
+        T: Send + Sync + 'static,
+    {
+        Self {
+            inner: Box::new(data),
+        }
+    }
+
     fn len(&self) -> usize {
         if self.inner.is::<ColumnData<i64>>() {
             column_len!(self, i64);
@@ -444,6 +391,61 @@ impl Clone for Column {
         } else {
             panic!("invalid column type")
         }
+    }
+}
+
+impl PartialEq for Column {
+    fn eq(&self, other: &Self) -> bool {
+        if self.inner.is::<ColumnData<i64>>() {
+            if !other.inner.is::<ColumnData<i64>>() {
+                return false;
+            }
+            return self.inner.downcast_ref::<ColumnData<i64>>().unwrap()
+                == other.inner.downcast_ref::<ColumnData<i64>>().unwrap();
+        }
+        if self.inner.is::<ColumnData<f64>>() {
+            if !other.inner.is::<ColumnData<f64>>() {
+                return false;
+            }
+            return self.inner.downcast_ref::<ColumnData<f64>>().unwrap()
+                == other.inner.downcast_ref::<ColumnData<f64>>().unwrap();
+        }
+        if self.inner.is::<ColumnData<u32>>() {
+            if !other.inner.is::<ColumnData<u32>>() {
+                return false;
+            }
+
+            return self.inner.downcast_ref::<ColumnData<u32>>().unwrap()
+                == other.inner.downcast_ref::<ColumnData<u32>>().unwrap();
+        }
+        if self.inner.is::<ColumnData<String>>() {
+            if !other.inner.is::<ColumnData<String>>() {
+                return false;
+            }
+            return self.inner.downcast_ref::<ColumnData<String>>().unwrap()
+                == other.inner.downcast_ref::<ColumnData<String>>().unwrap();
+        }
+        if self.inner.is::<ColumnData<IpAddr>>() {
+            if !other.inner.is::<ColumnData<IpAddr>>() {
+                return false;
+            }
+            return self.inner.downcast_ref::<ColumnData<IpAddr>>().unwrap()
+                == other.inner.downcast_ref::<ColumnData<IpAddr>>().unwrap();
+        }
+        if self.inner.is::<ColumnData<NaiveDateTime>>() {
+            if !other.inner.is::<ColumnData<NaiveDateTime>>() {
+                return false;
+            }
+            return self
+                .inner
+                .downcast_ref::<ColumnData<NaiveDateTime>>()
+                .unwrap()
+                == other
+                    .inner
+                    .downcast_ref::<ColumnData<NaiveDateTime>>()
+                    .unwrap();
+        }
+        false
     }
 }
 
@@ -649,6 +651,7 @@ mod tests {
     use crate::Column;
     use chrono::{NaiveDate, NaiveDateTime};
     use std::convert::TryFrom;
+    use std::net::Ipv4Addr;
 
     #[test]
     fn description_test() {
