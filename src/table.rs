@@ -13,6 +13,8 @@ use std::slice::Iter;
 
 use crate::{DataType, Schema};
 
+use log::info;
+
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const NUM_OF_TOP_N: usize = 30;
 
@@ -88,8 +90,32 @@ impl Table {
         col.len()
     }
 
-    pub fn describe(&self) -> Vec<Description> {
-        self.columns.iter().map(Column::describe).collect()
+    pub fn describe(&self, enum_maps: Option<&HashMap<usize, HashMap<String, u32>>>) -> Vec<Description> {
+        self.columns.iter().enumerate().map(|(index, column)| {
+            if column.inner.is::<ColumnData<u32>>() {
+                let map = if let Some(enum_maps) = enum_maps {
+                    if let Some(map) = enum_maps.get(&index) {
+                        if !map.is_empty() {
+                            info!("TEST: ENUM describe");
+                            Some(map)
+                        } else {
+                            info!("TEST: (1) a map is empty.");
+                            None
+                        }
+                    } else {
+                        info!("TEST: (2) fail in getting a map.");
+                        None
+                    }
+                } else {
+                    info!("TEST: (3) enum_maps is NONE.");
+                    None
+                };
+                info!("TEST: describe");
+                column.describe_enum(map)
+            } else {
+                column.describe()
+            }
+        }).collect()
     }
 
     pub fn get_index_of_event(&self, eventid: u64) -> Option<&usize> {
@@ -304,6 +330,76 @@ impl Column {
         self.inner.downcast_mut::<ColumnData<T>>()
     }
 
+    pub fn describe_enum(&self, enum_map: Option<&HashMap<String, u32>>) -> Description {
+        let desc = self.describe();
+        let is_map = if let Some(enum_map) = enum_map {
+            if !enum_map.is_empty() {
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let (top_n, mode) = {
+            if is_map {
+                let mut reverted_map = HashMap::new();
+                for (k, v) in enum_map.expect("safe").iter() {
+                    reverted_map.insert(*v, k);
+                }
+                (match desc.get_top_n() {
+                    Some(top_n) => Some(top_n.iter().map(|(v, c)| {
+                        if let DescriptionElement::UInt(value) = v {
+                            (DescriptionElement::Enum(reverted_map.get(value).unwrap().to_string()), *c)
+                        } else {
+                            (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                        }
+                    }).collect()),
+                    None => None,
+                }, 
+                match desc.get_mode() {
+                    Some(mode) => {
+                        if let DescriptionElement::UInt(value) = mode {
+                            Some(DescriptionElement::Enum(reverted_map.get(&value).unwrap().to_string()))
+                        } else { None }
+                    }
+                    None => None,
+                })
+            } else {
+                (match desc.get_top_n() {
+                    Some(top_n) => Some(top_n.iter().map(|(v, c)| {
+                        if let DescriptionElement::UInt(value) = v {
+                            (DescriptionElement::Enum(value.to_string()), *c)
+                        } else {
+                            (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                        }
+                    }).collect()),
+                    None => None,
+                },
+                match desc.get_mode() {
+                    Some(mode) => {
+                        if let DescriptionElement::UInt(value) = mode {
+                            Some(DescriptionElement::Enum(value.to_string()))
+                        } else { None }
+                    }
+                    None => None,
+                })
+            }
+        };
+
+        Description {
+            count: desc.get_count(),
+            unique_count: desc.get_unique_count(),
+            mean: None,
+            s_deviation: None,
+            min: None,
+            max: None,
+            top_n,
+            mode,
+        }
+    }
+
     pub fn describe(&self) -> Description {
         let mut desc = Description::default();
 
@@ -452,7 +548,8 @@ impl PartialEq for Column {
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum DescriptionElement {
     Int(i64),
-    UInt(u32),
+    UInt(u32), // only internal use because raw data stored as u32
+    Enum(String), // describe() converts UInt -> Enum using enum maps. Without maps, by to_string().
     Float(f64),
     FloatRange(f64, f64),
     Text(String),
@@ -465,6 +562,7 @@ impl fmt::Display for DescriptionElement {
         match self {
             Self::Int(x) => write!(f, "{}", x),
             Self::UInt(x) => write!(f, "{}", x),
+            Self::Enum(x) => write!(f, "{}", x),
             Self::Float(x) => write!(f, "{}", x),
             Self::FloatRange(x, y) => write!(f, "({} - {})", x, y),
             Self::Text(x) => write!(f, "{}", x),
@@ -695,7 +793,7 @@ mod tests {
         let table_org = Table::try_from(c_v).expect("invalid columns");
         let table = table_org.clone();
         move_table_add_row(table_org);
-        let ds = table.describe();
+        let ds = table.describe(None);
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -724,7 +822,7 @@ mod tests {
         table
             .push_one_row(one_row, 1)
             .expect("Failure in adding a row");
-        let ds = table.describe();
+        let ds = table.describe(None);
         assert_eq!(DescriptionElement::Int(3), ds[0].get_top_n().unwrap()[0].0);
         assert_eq!(4, ds[0].get_top_n().unwrap()[0].1);
     }
