@@ -13,8 +13,6 @@ use std::slice::Iter;
 
 use crate::{DataType, Schema};
 
-use log::info;
-
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const NUM_OF_TOP_N: usize = 30;
 
@@ -96,21 +94,16 @@ impl Table {
                 let map = if let Some(enum_maps) = enum_maps {
                     if let Some(map) = enum_maps.get(&index) {
                         if !map.is_empty() {
-                            info!("TEST: ENUM describe");
                             Some(map)
                         } else {
-                            info!("TEST: (1) a map is empty.");
                             None
                         }
                     } else {
-                        info!("TEST: (2) fail in getting a map.");
                         None
                     }
                 } else {
-                    info!("TEST: (3) enum_maps is NONE.");
                     None
                 };
-                info!("TEST: describe");
                 column.describe_enum(map)
             } else {
                 column.describe()
