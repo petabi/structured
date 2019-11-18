@@ -7,8 +7,8 @@ use std::net::{IpAddr, Ipv4Addr};
 pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     values: &[ByteRecord],
     schema: &Schema,
-    labels: Option<&HashMap<usize, HashMap<String, u32, S>, S>>,
-    formats: Option<&HashMap<usize, String, S>>,
+    labels: &HashMap<usize, HashMap<String, u32, S>, S>,
+    formats: &HashMap<usize, String, S>,
 ) -> Vec<Column> {
     let mut records: Vec<ByteRecordIter> = values.iter().map(ByteRecord::iter).collect();
     schema
@@ -33,9 +33,7 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
             })),
             DataType::Enum => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                let enum_value = labels.as_ref().map_or(0_u32, |label_map| {
-                    label_map.get(&fid).unwrap().get(&val).map_or(0, |val| *val)
-                });
+                let enum_value = labels.get(&fid).unwrap().get(&val).map_or(0, |val| *val);
                 col.push(enum_value);
                 col
             })),
@@ -50,7 +48,7 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
             DataType::DateTime => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                    let fmt = formats.unwrap().get(&fid).unwrap();
+                    let fmt = formats.get(&fid).unwrap();
                     col.push(
                         NaiveDateTime::parse_from_str(&val, fmt).unwrap_or_else(|_| {
                             NaiveDateTime::new(
@@ -68,7 +66,6 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use crate::datatypes::{DataType, Field};
     use itertools::izip;
@@ -161,8 +158,7 @@ mod tests {
     #[test]
     fn parse_records() {
         let (schema, records, labels, formats, columns) = get_test_data();
-        let result =
-            super::records_to_columns(records.as_slice(), &schema, Some(&labels), Some(&formats));
+        let result = super::records_to_columns(records.as_slice(), &schema, &labels, &formats);
         assert_eq!(result, columns);
     }
 }

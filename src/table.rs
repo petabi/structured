@@ -646,7 +646,6 @@ column_from!(NaiveDateTime);
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use crate::Column;
     use chrono::{NaiveDate, NaiveDateTime};
