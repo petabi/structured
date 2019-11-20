@@ -88,27 +88,34 @@ impl Table {
         col.len()
     }
 
-    pub fn describe(&self, enum_maps: Option<&HashMap<usize, HashMap<String, u32>>>) -> Vec<Description> {
-        self.columns.iter().enumerate().map(|(index, column)| {
-            if column.inner.is::<ColumnData<u32>>() {
-                let map = if let Some(enum_maps) = enum_maps {
-                    if let Some(map) = enum_maps.get(&index) {
-                        if !map.is_empty() {
-                            Some(map)
+    pub fn describe(
+        &self,
+        enum_maps: Option<&HashMap<usize, HashMap<String, u32>>>,
+    ) -> Vec<Description> {
+        self.columns
+            .iter()
+            .enumerate()
+            .map(|(index, column)| {
+                if column.inner.is::<ColumnData<u32>>() {
+                    let map = if let Some(enum_maps) = enum_maps {
+                        if let Some(map) = enum_maps.get(&index) {
+                            if map.is_empty() {
+                                None
+                            } else {
+                                Some(map)
+                            }
                         } else {
                             None
                         }
                     } else {
                         None
-                    }
+                    };
+                    column.describe_enum(map)
                 } else {
-                    None
-                };
-                column.describe_enum(map)
-            } else {
-                column.describe()
-            }
-        }).collect()
+                    column.describe()
+                }
+            })
+            .collect()
     }
 
     pub fn get_index_of_event(&self, eventid: u64) -> Option<&usize> {
@@ -326,11 +333,7 @@ impl Column {
     pub fn describe_enum(&self, enum_map: Option<&HashMap<String, u32>>) -> Description {
         let desc = self.describe();
         let is_map = if let Some(enum_map) = enum_map {
-            if !enum_map.is_empty() {
-                true
-            } else {
-                false
-            }
+            !enum_map.is_empty()
         } else {
             false
         };
@@ -341,43 +344,68 @@ impl Column {
                 for (k, v) in enum_map.expect("safe").iter() {
                     reverted_map.insert(*v, k);
                 }
-                (match desc.get_top_n() {
-                    Some(top_n) => Some(top_n.iter().map(|(v, c)| {
-                        if let DescriptionElement::UInt(value) = v {
-                            (DescriptionElement::Enum(reverted_map.get(value).unwrap().to_string()), *c)
-                        } else {
-                            (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                (
+                    match desc.get_top_n() {
+                        Some(top_n) => Some(
+                            top_n
+                                .iter()
+                                .map(|(v, c)| {
+                                    if let DescriptionElement::UInt(value) = v {
+                                        (
+                                            DescriptionElement::Enum(
+                                                reverted_map.get(value).unwrap().to_string(),
+                                            ),
+                                            *c,
+                                        )
+                                    } else {
+                                        (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                                    }
+                                })
+                                .collect(),
+                        ),
+                        None => None,
+                    },
+                    match desc.get_mode() {
+                        Some(mode) => {
+                            if let DescriptionElement::UInt(value) = mode {
+                                Some(DescriptionElement::Enum(
+                                    reverted_map.get(&value).unwrap().to_string(),
+                                ))
+                            } else {
+                                None
+                            }
                         }
-                    }).collect()),
-                    None => None,
-                }, 
-                match desc.get_mode() {
-                    Some(mode) => {
-                        if let DescriptionElement::UInt(value) = mode {
-                            Some(DescriptionElement::Enum(reverted_map.get(&value).unwrap().to_string()))
-                        } else { None }
-                    }
-                    None => None,
-                })
+                        None => None,
+                    },
+                )
             } else {
-                (match desc.get_top_n() {
-                    Some(top_n) => Some(top_n.iter().map(|(v, c)| {
-                        if let DescriptionElement::UInt(value) = v {
-                            (DescriptionElement::Enum(value.to_string()), *c)
-                        } else {
-                            (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                (
+                    match desc.get_top_n() {
+                        Some(top_n) => Some(
+                            top_n
+                                .iter()
+                                .map(|(v, c)| {
+                                    if let DescriptionElement::UInt(value) = v {
+                                        (DescriptionElement::Enum(value.to_string()), *c)
+                                    } else {
+                                        (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                                    }
+                                })
+                                .collect(),
+                        ),
+                        None => None,
+                    },
+                    match desc.get_mode() {
+                        Some(mode) => {
+                            if let DescriptionElement::UInt(value) = mode {
+                                Some(DescriptionElement::Enum(value.to_string()))
+                            } else {
+                                None
+                            }
                         }
-                    }).collect()),
-                    None => None,
-                },
-                match desc.get_mode() {
-                    Some(mode) => {
-                        if let DescriptionElement::UInt(value) = mode {
-                            Some(DescriptionElement::Enum(value.to_string()))
-                        } else { None }
-                    }
-                    None => None,
-                })
+                        None => None,
+                    },
+                )
             }
         };
 
@@ -541,7 +569,7 @@ impl PartialEq for Column {
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum DescriptionElement {
     Int(i64),
-    UInt(u32), // only internal use because raw data stored as u32
+    UInt(u32),    // only internal use because raw data stored as u32
     Enum(String), // describe() converts UInt -> Enum using enum maps. Without maps, by to_string().
     Float(f64),
     FloatRange(f64, f64),
@@ -555,10 +583,9 @@ impl fmt::Display for DescriptionElement {
         match self {
             Self::Int(x) => write!(f, "{}", x),
             Self::UInt(x) => write!(f, "{}", x),
-            Self::Enum(x) => write!(f, "{}", x),
+            Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
             Self::Float(x) => write!(f, "{}", x),
             Self::FloatRange(x, y) => write!(f, "({} - {})", x, y),
-            Self::Text(x) => write!(f, "{}", x),
             Self::IpAddr(x) => write!(f, "{}", x),
             Self::DateTime(x) => write!(f, "{}", x),
         }
