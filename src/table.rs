@@ -90,27 +90,20 @@ impl Table {
 
     pub fn describe(
         &self,
-        enum_maps: Option<&HashMap<usize, HashMap<String, u32>>>,
+        enum_maps: &HashMap<(usize, String), u32>,
     ) -> Vec<Description> {
+
+        let mut inverted_enum_map = HashMap::<u32, String>::new();
+        for ((_index, data), enum_value) in enum_maps {
+            inverted_enum_map.insert(*enum_value, data.clone());
+        }
+
         self.columns
             .iter()
             .enumerate()
-            .map(|(index, column)| {
+            .map(|(_index, column)| {
                 if column.inner.is::<ColumnData<u32>>() {
-                    let map = if let Some(enum_maps) = enum_maps {
-                        if let Some(map) = enum_maps.get(&index) {
-                            if map.is_empty() {
-                                None
-                            } else {
-                                Some(map)
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    column.describe_enum(map)
+                    column.describe_enum(&inverted_enum_map)
                 } else {
                     column.describe()
                 }
@@ -330,20 +323,11 @@ impl Column {
         self.inner.downcast_mut::<ColumnData<T>>()
     }
 
-    pub fn describe_enum(&self, enum_map: Option<&HashMap<String, u32>>) -> Description {
+    pub fn describe_enum(&self, reverted_map: &HashMap<u32, String>) -> Description {
         let desc = self.describe();
-        let is_map = if let Some(enum_map) = enum_map {
-            !enum_map.is_empty()
-        } else {
-            false
-        };
 
         let (top_n, mode) = {
-            if is_map {
-                let mut reverted_map = HashMap::new();
-                for (k, v) in enum_map.expect("safe").iter() {
-                    reverted_map.insert(*v, k);
-                }
+            if !reverted_map.is_empty() {
                 (
                     match desc.get_top_n() {
                         Some(top_n) => Some(
@@ -813,7 +797,7 @@ mod tests {
         let table_org = Table::try_from(c_v).expect("invalid columns");
         let table = table_org.clone();
         move_table_add_row(table_org);
-        let ds = table.describe(None);
+        let ds = table.describe(&HashMap::new());
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -842,7 +826,7 @@ mod tests {
         table
             .push_one_row(one_row, 1)
             .expect("Failure in adding a row");
-        let ds = table.describe(None);
+        let ds = table.describe(&HashMap::new());
         assert_eq!(DescriptionElement::Int(3), ds[0].get_top_n().unwrap()[0].0);
         assert_eq!(4, ds[0].get_top_n().unwrap()[0].1);
     }
