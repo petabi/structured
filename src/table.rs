@@ -90,20 +90,20 @@ impl Table {
 
     pub fn describe(
         &self,
-        enum_maps: &HashMap<(usize, String), u32>,
+        enum_maps: &HashMap<usize, HashMap<String, u32>>,
     ) -> Vec<Description> {
-
-        let mut inverted_enum_map = HashMap::<u32, String>::new();
-        for ((_index, data), enum_value) in enum_maps {
-            inverted_enum_map.insert(*enum_value, data.clone());
-        }
-
         self.columns
             .iter()
             .enumerate()
-            .map(|(_index, column)| {
+            .map(|(index, column)| {
                 if column.inner.is::<ColumnData<u32>>() {
-                    column.describe_enum(&inverted_enum_map)
+                    let mut reverse_enum_map = HashMap::<u32, String>::new();
+                    if let Some(map) = enum_maps.get(&index) {
+                        for (data, enum_value) in map {
+                            reverse_enum_map.insert(*enum_value, data.clone());
+                        }
+                    }
+                    column.describe_enum(&reverse_enum_map)
                 } else {
                     column.describe()
                 }
@@ -323,11 +323,11 @@ impl Column {
         self.inner.downcast_mut::<ColumnData<T>>()
     }
 
-    pub fn describe_enum(&self, reverted_map: &HashMap<u32, String>) -> Description {
+    pub fn describe_enum(&self, reverse_map: &HashMap<u32, String>) -> Description {
         let desc = self.describe();
 
         let (top_n, mode) = {
-            if !reverted_map.is_empty() {
+            if !reverse_map.is_empty() {
                 (
                     match desc.get_top_n() {
                         Some(top_n) => Some(
@@ -337,7 +337,7 @@ impl Column {
                                     if let DescriptionElement::UInt(value) = v {
                                         (
                                             DescriptionElement::Enum(
-                                                reverted_map.get(value).unwrap().to_string(),
+                                                reverse_map.get(value).unwrap().to_string(),
                                             ),
                                             *c,
                                         )
@@ -353,7 +353,7 @@ impl Column {
                         Some(mode) => {
                             if let DescriptionElement::UInt(value) = mode {
                                 Some(DescriptionElement::Enum(
-                                    reverted_map.get(&value).unwrap().to_string(),
+                                    reverse_map.get(&value).unwrap().to_string(),
                                 ))
                             } else {
                                 None

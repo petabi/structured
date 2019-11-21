@@ -1,7 +1,7 @@
 use crate::{Column, DataType, Schema};
-use chashmap::CHashMap;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use csv::{ByteRecord, ByteRecordIter};
+use dashmap::DashMap;
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
@@ -12,9 +12,10 @@ use log::info;
 pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     values: &[ByteRecord],
     schema: &Schema,
-    labels: &Arc<CHashMap<(usize, String), u32>>,
+    labels: &Arc<DashMap<usize, Arc<DashMap<String, u32>>>>,
     formats: &HashMap<usize, String, S>,
 ) -> Vec<Column> {
+    info!("TEST: start of records_to_columns");
     let mut records: Vec<ByteRecordIter> = values.iter().map(ByteRecord::iter).collect();
     schema
         .fields()
@@ -22,33 +23,43 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
         .enumerate()
         .map(|(fid, field)| match field.data_type() {
             DataType::Int => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                info!("TEST: DataType::Int");
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 col.push(val.parse::<i64>().unwrap_or_default());
                 col
             })),
             DataType::Float => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                info!("TEST: DataType::Float");
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 col.push(val.parse::<f64>().unwrap_or_default());
                 col
             })),
             DataType::Str => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                info!("TEST: DataType::Str");
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 col.push(val);
                 col
             })),
             DataType::Enum => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                //info!("TEST: Enum handling");
-                let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                let enum_value = if let Some(enum_value) = labels.get(&(fid, val.clone())) {
-                        *enum_value
-                    } else {
-                        labels.upsert((fid, val.clone()), || (labels.len() + 1).to_u32().unwrap_or(0_32), |_| ());
-                        *labels.get(&(fid, val.clone())).unwrap()
-                    };
-                col.push(enum_value);
+                // info!("TEST: enum!");
+                // let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
+                // let enum_value = if let Some(map) = labels.get(&fid) {
+                //     *map.get_or_insert(&val, (map.len() + 1).to_u32().unwrap_or(0_u32)) // 0 means something wrong
+                // } else {
+                //     0_u32
+                // };
+                // info!("TEST:       enum_value is {} {}", fid, enum_value);
+                // let mut count = 0_usize;
+                // for m in labels.iter() {
+                //     count += m.len();
+                // }
+                // info!("TEST:             enum size is {}", count);
+                // col.push(enum_value);
+                col.push(0_u32);
                 col
             })),
             DataType::IpAddr => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                info!("TEST: DataType::IpAddr");
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 col.push(
                     val.parse::<IpAddr>()
@@ -57,6 +68,7 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
                 col
             })),
             DataType::DateTime => {
+                info!("TEST: DataType::DateTime");
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                     let fmt = formats.get(&fid).unwrap();
@@ -75,101 +87,116 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
         .collect()
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::datatypes::{DataType, Field};
-//     use itertools::izip;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::datatypes::{DataType, Field};
+    use dashmap::DashMap;
+    use itertools::izip;
+    use std::sync::Arc;
 
-//     fn get_test_data() -> (
-//         Schema,
-//         Vec<ByteRecord>,
-//         Arc<CHashMap<usize, CHashMap<String, u32>>>,
-//         HashMap<usize, String>,
-//         Vec<Column>,
-//     ) {
-//         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
-//         let c1_v: Vec<String> = vec![
-//             "111a qwer".to_string(),
-//             "b".to_string(),
-//             "c".to_string(),
-//             "d".to_string(),
-//             "b".to_string(),
-//             "111a qwer".to_string(),
-//             "111a qwer".to_string(),
-//         ];
-//         let c2_v: Vec<IpAddr> = vec![
-//             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-//             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-//             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
-//             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 4)),
-//             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-//             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-//             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
-//         ];
-//         let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
-//         let c4_v: Vec<NaiveDateTime> = vec![
-//             NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 10, 11),
-//             NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 15, 11),
-//             NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
-//             NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
-//             NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 45, 11),
-//             NaiveDate::from_ymd(2019, 9, 21).and_hms(8, 10, 11),
-//             NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
-//         ];
-//         let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
+    fn get_test_data() -> (
+        Schema,
+        Vec<ByteRecord>,
+        HashMap<usize, HashMap<String, u32>>,
+        HashMap<usize, String>,
+        Vec<Column>,
+    ) {
+        let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
+        let c1_v: Vec<String> = vec![
+            "111a qwer".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+            "d".to_string(),
+            "b".to_string(),
+            "111a qwer".to_string(),
+            "111a qwer".to_string(),
+        ];
+        let c2_v: Vec<IpAddr> = vec![
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 4)),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
+        ];
+        let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
+        let c4_v: Vec<NaiveDateTime> = vec![
+            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 10, 11),
+            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 15, 11),
+            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
+            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
+            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 45, 11),
+            NaiveDate::from_ymd(2019, 9, 21).and_hms(8, 10, 11),
+            NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
+        ];
+        let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
 
-//         let c5_map: CHashMap<u32, String> = CHashMap::new();
-//         c5_map.insert(1, "t1".to_string());
-//         c5_map.insert(2, "t2".to_string());
-//         c5_map.insert(7, "t3".to_string());
+        let mut c5_map: HashMap<u32, String> = HashMap::new();
+        c5_map.insert(1, "t1".to_string());
+        c5_map.insert(2, "t2".to_string());
+        c5_map.insert(7, "t3".to_string());
 
-//         let mut records = vec![];
-//         let fmt = "%Y-%m-%d %H:%M:%S";
-//         for (c0, c1, c2, c3, c4, c5) in izip!(
-//             c0_v.iter(),
-//             c1_v.iter(),
-//             c2_v.iter(),
-//             c3_v.iter(),
-//             c4_v.iter(),
-//             c5_v.iter()
-//         ) {
-//             let mut row: Vec<String> = vec![];
-//             row.push(c0.to_string());
-//             row.push(c1.clone());
-//             row.push(c2.to_string());
-//             row.push(c3.to_string());
-//             row.push(c4.format(fmt).to_string());
-//             row.push(c5_map.get(c5).unwrap().to_string());
-//             records.push(ByteRecord::from(row));
-//         }
-//         let schema = Schema::new(vec![
-//             Field::new(DataType::Int),
-//             Field::new(DataType::Str),
-//             Field::new(DataType::IpAddr),
-//             Field::new(DataType::Float),
-//             Field::new(DataType::DateTime),
-//             Field::new(DataType::Enum),
-//         ]);
-//         let mut formats = HashMap::new();
-//         formats.entry(4).or_insert(fmt.to_string());
-//         let labels = CHashMap::new();
-//         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, k)).collect());
+        let mut records = vec![];
+        let fmt = "%Y-%m-%d %H:%M:%S";
+        for (c0, c1, c2, c3, c4, c5) in izip!(
+            c0_v.iter(),
+            c1_v.iter(),
+            c2_v.iter(),
+            c3_v.iter(),
+            c4_v.iter(),
+            c5_v.iter()
+        ) {
+            let mut row: Vec<String> = vec![];
+            row.push(c0.to_string());
+            row.push(c1.clone());
+            row.push(c2.to_string());
+            row.push(c3.to_string());
+            row.push(c4.format(fmt).to_string());
+            row.push(c5_map.get(c5).unwrap().to_string());
+            records.push(ByteRecord::from(row));
+        }
+        let schema = Schema::new(vec![
+            Field::new(DataType::Int),
+            Field::new(DataType::Str),
+            Field::new(DataType::IpAddr),
+            Field::new(DataType::Float),
+            Field::new(DataType::DateTime),
+            Field::new(DataType::Enum),
+        ]);
+        let mut formats = HashMap::new();
+        formats.entry(4).or_insert(fmt.to_string());
+        let mut labels = HashMap::new();
+        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, k)).collect());
 
-//         let c0 = Column::from(c0_v);
-//         let c1 = Column::from(c1_v);
-//         let c2 = Column::from(c2_v);
-//         let c3 = Column::from(c3_v);
-//         let c4 = Column::from(c4_v);
-//         let c5 = Column::from(c5_v);
-//         let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
-//         (schema, records, Arc::new(labels), formats, columns)
-//     }
+        let c0 = Column::from(c0_v);
+        let c1 = Column::from(c1_v);
+        let c2 = Column::from(c2_v);
+        let c3 = Column::from(c3_v);
+        let c4 = Column::from(c4_v);
+        let c5 = Column::from(c5_v);
+        let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
+        (schema, records, labels, formats, columns)
+    }
 
-    // #[test]
-    // fn parse_records() {
-    //     let (schema, records, labels, formats, columns) = get_test_data();
-    //     let result = super::records_to_columns(records.as_slice(), &schema, &labels, &formats);
-    //     assert_eq!(result, columns);
-    // }
-// }
+    #[test]
+    fn parse_records() {
+        let (schema, records, labels, formats, columns) = get_test_data();
+        let result = super::records_to_columns(records.as_slice(), &schema, &convert_to_conc_enum_maps(&labels), &formats);
+        assert_eq!(result, columns);
+    }
+
+    pub fn convert_to_conc_enum_maps(enum_maps: &HashMap<usize, HashMap<String, u32>>) -> Arc<DashMap<usize, Arc<DashMap<String, u32>>>> {
+        let c_enum_maps = Arc::new(DashMap::default());
+    
+        for (column, map) in enum_maps.iter() {
+            let c_map = Arc::new(DashMap::<String, u32>::default());
+            for (data, enum_val) in map.iter() {
+                c_map.insert(data.clone(), *enum_val);
+            }
+            c_enum_maps.insert(*column, c_map)
+        }
+        c_enum_maps       
+    }
+}
