@@ -33,7 +33,11 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
             })),
             DataType::Enum => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                let enum_value = labels.get(&fid).unwrap().get(&val).map_or(0, |val| *val);
+                let enum_value = if let Some(map) = labels.get(&fid) {
+                    map.get(&val).map_or(0, |val| *val)
+                } else {
+                    0
+                };
                 col.push(enum_value);
                 col
             })),
@@ -160,5 +164,20 @@ mod tests {
         let (schema, records, labels, formats, columns) = get_test_data();
         let result = super::records_to_columns(records.as_slice(), &schema, &labels, &formats);
         assert_eq!(result, columns);
+    }
+
+    #[test]
+    fn missing_enum_map() {
+        let schema = Schema::new(vec![Field::new(DataType::Enum)]);
+        let labels = HashMap::new();
+
+        let row = vec!["1".to_string()];
+        let records = vec![ByteRecord::from(row)];
+
+        let result =
+            super::records_to_columns(records.as_slice(), &schema, &labels, &HashMap::new());
+
+        let c = Column::from(vec![0_u32]);
+        assert_eq!(c, result[0]);
     }
 }
