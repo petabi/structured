@@ -165,18 +165,6 @@ mod tests {
         (schema, records, labels, formats, columns)
     }
 
-    #[test]
-    fn parse_records() {
-        let (schema, records, labels, formats, columns) = get_test_data();
-        let result = super::records_to_columns(
-            records.as_slice(),
-            &schema,
-            &convert_to_conc_enum_maps(&labels),
-            &formats,
-        );
-        assert_eq!(result, columns);
-    }
-
     pub fn convert_to_conc_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, u32>>,
     ) -> Arc<DashMap<usize, Arc<DashMap<String, u32>>>> {
@@ -190,5 +178,36 @@ mod tests {
             c_enum_maps.insert(*column, c_map)
         }
         c_enum_maps
+    }
+
+    #[test]
+    fn parse_records() {
+        let (schema, records, labels, formats, columns) = get_test_data();
+        let result = super::records_to_columns(
+            records.as_slice(),
+            &schema,
+            &convert_to_conc_enum_maps(&labels),
+            &formats,
+        );
+        assert_eq!(result, columns);
+    }
+
+    #[test]
+    fn missing_enum_map() {
+        let schema = Schema::new(vec![Field::new(DataType::Enum)]);
+        let labels = HashMap::new();
+
+        let row = vec!["1".to_string()];
+        let records = vec![ByteRecord::from(row)];
+
+        let result = super::records_to_columns(
+            records.as_slice(),
+            &schema,
+            &convert_to_conc_enum_maps(&labels),
+            &HashMap::new(),
+        );
+
+        let c = Column::from(vec![0_u32]);
+        assert_eq!(c, result[0]);
     }
 }
