@@ -849,6 +849,7 @@ mod tests {
             ColumnOfOneRow::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 100))),
             ColumnOfOneRow::Float(100.100),
             ColumnOfOneRow::DateTime(NaiveDate::from_ymd(2019, 10, 10).and_hms(10, 10, 10)),
+            ColumnOfOneRow::UInt(7),
         ];
         table
             .push_one_row(one_row, 1)
