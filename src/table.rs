@@ -88,15 +88,30 @@ impl Table {
         col.len()
     }
 
-    pub fn describe(&self) -> Vec<Description> {
-        self.columns.iter().map(Column::describe).collect()
+    pub fn describe(&self, enum_maps: &HashMap<usize, HashMap<String, u32>>) -> Vec<Description> {
+        self.columns
+            .iter()
+            .enumerate()
+            .map(|(index, column)| {
+                if column.inner.is::<ColumnData<u32>>() {
+                    let mut reverse_enum_map = HashMap::<u32, String>::new();
+                    if let Some(map) = enum_maps.get(&index) {
+                        for (data, enum_value) in map {
+                            reverse_enum_map.insert(*enum_value, data.clone());
+                        }
+                    }
+                    column.describe_enum(&reverse_enum_map)
+                } else {
+                    column.describe()
+                }
+            })
+            .collect()
     }
 
     pub fn get_index_of_event(&self, eventid: u64) -> Option<&usize> {
         self.event_ids.get(&eventid)
     }
 
-    // TODO : add error handling
     pub fn push_one_row(
         &mut self,
         one_row: Vec<ColumnOfOneRow>,
@@ -134,7 +149,7 @@ impl Table {
                         c.push(v)
                     };
                 }
-                _ => (),
+                _ => unreachable!(), // by implementation
             }
         }
         let len = self.event_ids.len();
@@ -304,6 +319,88 @@ impl Column {
         self.inner.downcast_mut::<ColumnData<T>>()
     }
 
+    pub fn describe_enum(&self, reverse_map: &HashMap<u32, String>) -> Description {
+        let desc = self.describe();
+
+        let (top_n, mode) = {
+            if reverse_map.is_empty() {
+                (
+                    match desc.get_top_n() {
+                        Some(top_n) => Some(
+                            top_n
+                                .iter()
+                                .map(|(v, c)| {
+                                    if let DescriptionElement::UInt(value) = v {
+                                        (DescriptionElement::Enum(value.to_string()), *c)
+                                    } else {
+                                        (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                                    }
+                                })
+                                .collect(),
+                        ),
+                        None => None,
+                    },
+                    match desc.get_mode() {
+                        Some(mode) => {
+                            if let DescriptionElement::UInt(value) = mode {
+                                Some(DescriptionElement::Enum(value.to_string()))
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    },
+                )
+            } else {
+                (
+                    match desc.get_top_n() {
+                        Some(top_n) => Some(
+                            top_n
+                                .iter()
+                                .map(|(v, c)| {
+                                    if let DescriptionElement::UInt(value) = v {
+                                        (
+                                            DescriptionElement::Enum(
+                                                reverse_map.get(value).unwrap().to_string(),
+                                            ),
+                                            *c,
+                                        )
+                                    } else {
+                                        (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                                    }
+                                })
+                                .collect(),
+                        ),
+                        None => None,
+                    },
+                    match desc.get_mode() {
+                        Some(mode) => {
+                            if let DescriptionElement::UInt(value) = mode {
+                                Some(DescriptionElement::Enum(
+                                    reverse_map.get(&value).unwrap().to_string(),
+                                ))
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    },
+                )
+            }
+        };
+
+        Description {
+            count: desc.get_count(),
+            unique_count: desc.get_unique_count(),
+            mean: None,
+            s_deviation: None,
+            min: None,
+            max: None,
+            top_n,
+            mode,
+        }
+    }
+
     pub fn describe(&self) -> Description {
         let mut desc = Description::default();
 
@@ -313,15 +410,15 @@ impl Column {
         } else if self.inner.is::<ColumnData<f64>>() {
             let cd: &ColumnData<f64> = self.values().unwrap();
             describe_min_max!(cd, desc, DescriptionElement::Float);
-
-            let min = match desc.get_min().unwrap() {
-                DescriptionElement::Float(f) => f,
-                _ => panic!(), // TODO: add error handling
+            let min = if let Some(DescriptionElement::Float(f)) = desc.get_min() {
+                f
+            } else {
+                unreachable!() // by implementation
             };
-
-            let max = match desc.get_max().unwrap() {
-                DescriptionElement::Float(f) => f,
-                _ => panic!(), // TODO: add error handling
+            let max = if let Some(DescriptionElement::Float(f)) = desc.get_max() {
+                f
+            } else {
+                unreachable!() // by implementation
             };
             let (rc, rt) = describe_top_n_f64(cd, *min, *max);
             desc.count = cd.len();
@@ -452,7 +549,8 @@ impl PartialEq for Column {
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum DescriptionElement {
     Int(i64),
-    UInt(u32),
+    UInt(u32),    // only internal use because raw data stored as u32
+    Enum(String), // describe() converts UInt -> Enum using enum maps. Without maps, by to_string().
     Float(f64),
     FloatRange(f64, f64),
     Text(String),
@@ -465,9 +563,9 @@ impl fmt::Display for DescriptionElement {
         match self {
             Self::Int(x) => write!(f, "{}", x),
             Self::UInt(x) => write!(f, "{}", x),
+            Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
             Self::Float(x) => write!(f, "{}", x),
             Self::FloatRange(x, y) => write!(f, "({} - {})", x, y),
-            Self::Text(x) => write!(f, "{}", x),
             Self::IpAddr(x) => write!(f, "{}", x),
             Self::DateTime(x) => write!(f, "{}", x),
         }
@@ -695,7 +793,7 @@ mod tests {
         let table_org = Table::try_from(c_v).expect("invalid columns");
         let table = table_org.clone();
         move_table_add_row(table_org);
-        let ds = table.describe();
+        let ds = table.describe(&HashMap::new());
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -711,6 +809,37 @@ mod tests {
             DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
             ds[4].get_top_n().unwrap()[0].0
         );
+        assert_eq!(
+            DescriptionElement::Enum("2".to_string()),
+            *ds[5].get_mode().unwrap()
+        );
+
+        let mut c5_map: HashMap<u32, String> = HashMap::new();
+        c5_map.insert(1, "t1".to_string());
+        c5_map.insert(2, "t2".to_string());
+        c5_map.insert(7, "t3".to_string());
+        let mut labels = HashMap::new();
+        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, k)).collect());
+        let ds = table.describe(&labels);
+
+        assert_eq!(4, ds[0].unique_count);
+        assert_eq!(
+            DescriptionElement::Text("111a qwer".to_string()),
+            *ds[1].get_mode().unwrap()
+        );
+        assert_eq!(
+            DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
+            ds[2].get_top_n().unwrap()[1].0
+        );
+        assert_eq!(3, ds[3].unique_count);
+        assert_eq!(
+            DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
+            ds[4].get_top_n().unwrap()[0].0
+        );
+        assert_eq!(
+            DescriptionElement::Enum("t2".to_string()),
+            *ds[5].get_mode().unwrap()
+        );
     }
 
     pub fn move_table_add_row(mut table: Table) {
@@ -720,11 +849,12 @@ mod tests {
             ColumnOfOneRow::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 100))),
             ColumnOfOneRow::Float(100.100),
             ColumnOfOneRow::DateTime(NaiveDate::from_ymd(2019, 10, 10).and_hms(10, 10, 10)),
+            ColumnOfOneRow::UInt(7),
         ];
         table
             .push_one_row(one_row, 1)
             .expect("Failure in adding a row");
-        let ds = table.describe();
+        let ds = table.describe(&HashMap::new());
         assert_eq!(DescriptionElement::Int(3), ds[0].get_top_n().unwrap()[0].0);
         assert_eq!(4, ds[0].get_top_n().unwrap()[0].1);
     }

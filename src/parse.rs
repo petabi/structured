@@ -1,13 +1,16 @@
 use crate::{Column, DataType, Schema};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use csv::{ByteRecord, ByteRecordIter};
+use dashmap::DashMap;
+use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::Arc;
 
 pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     values: &[ByteRecord],
     schema: &Schema,
-    labels: &HashMap<usize, HashMap<String, u32, S>, S>,
+    labels: &Arc<DashMap<usize, Arc<DashMap<String, u32>>>>,
     formats: &HashMap<usize, String, S>,
 ) -> Vec<Column> {
     let mut records: Vec<ByteRecordIter> = values.iter().map(ByteRecord::iter).collect();
@@ -34,9 +37,10 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
             DataType::Enum => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 let enum_value = if let Some(map) = labels.get(&fid) {
-                    map.get(&val).map_or(0, |val| *val)
+                    *map.get_or_insert(&val, (map.len() + 1).to_u32().unwrap_or(0_u32))
+                // 0 means something wrong, and enum value starts with 1.
                 } else {
-                    0
+                    0_u32
                 };
                 col.push(enum_value);
                 col
@@ -72,7 +76,9 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
 mod tests {
     use super::*;
     use crate::datatypes::{DataType, Field};
+    use dashmap::DashMap;
     use itertools::izip;
+    use std::sync::Arc;
 
     fn get_test_data() -> (
         Schema,
@@ -159,10 +165,30 @@ mod tests {
         (schema, records, labels, formats, columns)
     }
 
+    pub fn convert_to_conc_enum_maps(
+        enum_maps: &HashMap<usize, HashMap<String, u32>>,
+    ) -> Arc<DashMap<usize, Arc<DashMap<String, u32>>>> {
+        let c_enum_maps = Arc::new(DashMap::default());
+
+        for (column, map) in enum_maps {
+            let c_map = Arc::new(DashMap::<String, u32>::default());
+            for (data, enum_val) in map {
+                c_map.insert(data.clone(), *enum_val);
+            }
+            c_enum_maps.insert(*column, c_map)
+        }
+        c_enum_maps
+    }
+
     #[test]
     fn parse_records() {
         let (schema, records, labels, formats, columns) = get_test_data();
-        let result = super::records_to_columns(records.as_slice(), &schema, &labels, &formats);
+        let result = super::records_to_columns(
+            records.as_slice(),
+            &schema,
+            &convert_to_conc_enum_maps(&labels),
+            &formats,
+        );
         assert_eq!(result, columns);
     }
 
@@ -174,8 +200,12 @@ mod tests {
         let row = vec!["1".to_string()];
         let records = vec![ByteRecord::from(row)];
 
-        let result =
-            super::records_to_columns(records.as_slice(), &schema, &labels, &HashMap::new());
+        let result = super::records_to_columns(
+            records.as_slice(),
+            &schema,
+            &convert_to_conc_enum_maps(&labels),
+            &HashMap::new(),
+        );
 
         let c = Column::from(vec![0_u32]);
         assert_eq!(c, result[0]);

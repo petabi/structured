@@ -3,6 +3,7 @@ name = "structured"
 version = "0.1.0"
 authors = [
     "Min Kim <msk@dolbo.net>",
+    "Min Shao <mshao@petabi.com>",
     "Sehkone Kim <sehkone@petabi.com>",
 ]
 edition = "2018"
@@ -10,7 +11,8 @@ edition = "2018"
 [dependencies]
 chrono = { version = "0.4.9", features = ["serde"] }
 csv = "1"
+dashmap = "1"
 itertools = "0.8"
 num-traits = "0.2"
-statistical = "1.0.0"
+statistical = "1"
 serde = { version = "1", features = ["derive"] }
