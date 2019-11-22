@@ -809,6 +809,37 @@ mod tests {
             DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
             ds[4].get_top_n().unwrap()[0].0
         );
+        assert_eq!(
+            DescriptionElement::Enum("2".to_string()),
+            *ds[5].get_mode().unwrap()
+        );
+
+        let mut c5_map: HashMap<u32, String> = HashMap::new();
+        c5_map.insert(1, "t1".to_string());
+        c5_map.insert(2, "t2".to_string());
+        c5_map.insert(7, "t3".to_string());
+        let mut labels = HashMap::new();
+        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, k)).collect());
+        let ds = table.describe(&labels);
+
+        assert_eq!(4, ds[0].unique_count);
+        assert_eq!(
+            DescriptionElement::Text("111a qwer".to_string()),
+            *ds[1].get_mode().unwrap()
+        );
+        assert_eq!(
+            DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
+            ds[2].get_top_n().unwrap()[1].0
+        );
+        assert_eq!(3, ds[3].unique_count);
+        assert_eq!(
+            DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
+            ds[4].get_top_n().unwrap()[0].0
+        );
+        assert_eq!(
+            DescriptionElement::Enum("t2".to_string()),
+            *ds[5].get_mode().unwrap()
+        );
     }
 
     pub fn move_table_add_row(mut table: Table) {
