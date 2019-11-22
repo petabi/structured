@@ -88,10 +88,7 @@ impl Table {
         col.len()
     }
 
-    pub fn describe(
-        &self,
-        enum_maps: &HashMap<usize, HashMap<String, u32>>,
-    ) -> Vec<Description> {
+    pub fn describe(&self, enum_maps: &HashMap<usize, HashMap<String, u32>>) -> Vec<Description> {
         self.columns
             .iter()
             .enumerate()
@@ -115,7 +112,6 @@ impl Table {
         self.event_ids.get(&eventid)
     }
 
-    // TODO : add error handling
     pub fn push_one_row(
         &mut self,
         one_row: Vec<ColumnOfOneRow>,
@@ -153,7 +149,7 @@ impl Table {
                         c.push(v)
                     };
                 }
-                _ => (),
+                _ => unreachable!(), // by implementation
             }
         }
         let len = self.event_ids.len();
@@ -327,7 +323,35 @@ impl Column {
         let desc = self.describe();
 
         let (top_n, mode) = {
-            if !reverse_map.is_empty() {
+            if reverse_map.is_empty() {
+                (
+                    match desc.get_top_n() {
+                        Some(top_n) => Some(
+                            top_n
+                                .iter()
+                                .map(|(v, c)| {
+                                    if let DescriptionElement::UInt(value) = v {
+                                        (DescriptionElement::Enum(value.to_string()), *c)
+                                    } else {
+                                        (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                                    }
+                                })
+                                .collect(),
+                        ),
+                        None => None,
+                    },
+                    match desc.get_mode() {
+                        Some(mode) => {
+                            if let DescriptionElement::UInt(value) = mode {
+                                Some(DescriptionElement::Enum(value.to_string()))
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    },
+                )
+            } else {
                 (
                     match desc.get_top_n() {
                         Some(top_n) => Some(
@@ -362,34 +386,6 @@ impl Column {
                         None => None,
                     },
                 )
-            } else {
-                (
-                    match desc.get_top_n() {
-                        Some(top_n) => Some(
-                            top_n
-                                .iter()
-                                .map(|(v, c)| {
-                                    if let DescriptionElement::UInt(value) = v {
-                                        (DescriptionElement::Enum(value.to_string()), *c)
-                                    } else {
-                                        (DescriptionElement::Enum("_N/A_".to_string()), *c)
-                                    }
-                                })
-                                .collect(),
-                        ),
-                        None => None,
-                    },
-                    match desc.get_mode() {
-                        Some(mode) => {
-                            if let DescriptionElement::UInt(value) = mode {
-                                Some(DescriptionElement::Enum(value.to_string()))
-                            } else {
-                                None
-                            }
-                        }
-                        None => None,
-                    },
-                )
             }
         };
 
@@ -414,15 +410,15 @@ impl Column {
         } else if self.inner.is::<ColumnData<f64>>() {
             let cd: &ColumnData<f64> = self.values().unwrap();
             describe_min_max!(cd, desc, DescriptionElement::Float);
-
-            let min = match desc.get_min().unwrap() {
-                DescriptionElement::Float(f) => f,
-                _ => panic!(), // TODO: add error handling
+            let min = if let Some(DescriptionElement::Float(f)) = desc.get_min() {
+                f
+            } else {
+                unreachable!() // by implementation
             };
-
-            let max = match desc.get_max().unwrap() {
-                DescriptionElement::Float(f) => f,
-                _ => panic!(), // TODO: add error handling
+            let max = if let Some(DescriptionElement::Float(f)) = desc.get_max() {
+                f
+            } else {
+                unreachable!() // by implementation
             };
             let (rc, rt) = describe_top_n_f64(cd, *min, *max);
             desc.count = cd.len();

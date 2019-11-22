@@ -12,7 +12,6 @@ chrono = { version = "0.4.9", features = ["serde"] }
 csv = "1"
 dashmap = "1.2"
 itertools = "0.8"
-log = "0.4"
 num-traits = "0.2"
 statistical = "1.0.0"
 serde = { version = "1", features = ["derive"] }
