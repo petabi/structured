@@ -38,7 +38,7 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 let enum_value = if let Some(map) = labels.get(&fid) {
                     *map.get_or_insert(&val, (map.len() + 1).to_u32().unwrap_or(0_u32))
-                // 0 means something wrong, and enum value stars with 1.
+                // 0 means something wrong, and enum value starts with 1.
                 } else {
                     0_u32
                 };
