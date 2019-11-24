@@ -10,7 +10,7 @@ use std::sync::Arc;
 pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     values: &[ByteRecord],
     schema: &Schema,
-    labels: &Arc<DashMap<usize, Arc<DashMap<String, u32>>>>,
+    labels: &Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>,
     formats: &HashMap<usize, String, S>,
 ) -> Vec<Column> {
     let mut records: Vec<ByteRecordIter> = values.iter().map(ByteRecord::iter).collect();
@@ -37,7 +37,9 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
             DataType::Enum => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 let enum_value = if let Some(map) = labels.get(&fid) {
-                    *map.get_or_insert(&val, (map.len() + 1).to_u32().unwrap_or(0_u32))
+                    let enum_value = map.get_or_insert(&val, ((map.len() + 1).to_u32().unwrap_or(0_u32), 0_usize)).0;
+                    map.alter(&val, |v| (v.0, v.1 + 1));
+                    enum_value
                 // 0 means something wrong, and enum value starts with 1.
                 } else {
                     0_u32
@@ -167,13 +169,13 @@ mod tests {
 
     pub fn convert_to_conc_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, u32>>,
-    ) -> Arc<DashMap<usize, Arc<DashMap<String, u32>>>> {
+    ) -> Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>> {
         let c_enum_maps = Arc::new(DashMap::default());
 
         for (column, map) in enum_maps {
-            let c_map = Arc::new(DashMap::<String, u32>::default());
+            let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
             for (data, enum_val) in map {
-                c_map.insert(data.clone(), *enum_val);
+                c_map.insert(data.clone(), (*enum_val, 0_usize));
             }
             c_enum_maps.insert(*column, c_map)
         }

@@ -1,15 +1,18 @@
 use chrono::{NaiveDateTime, NaiveTime, Timelike};
+use dashmap::DashMap;
 use itertools::izip;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use statistical::*;
 use std::any::Any;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 use std::hash::Hash;
 use std::net::IpAddr;
 use std::slice::Iter;
+use std::sync::Arc;
 
 use crate::{DataType, Schema};
 
@@ -155,6 +158,38 @@ impl Table {
         let len = self.event_ids.len();
         self.event_ids.entry(event_id).or_insert(len);
         Ok(())
+    }
+
+    pub fn limit_dimension(&mut self, 
+        enum_dimensions: &HashMap<usize, u32>, 
+        enum_maps: &Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>,
+        max_dimension: u32) {
+        for map in enum_maps.iter() {
+            let column_index = map.key();
+            let column_map = map.value();
+            let dimension = *(enum_dimensions.get(column_index).unwrap_or(&max_dimension));
+            let mut map_vector: Vec<(String, u32, usize)> = column_map.iter().map(|m| (m.key().clone(), m.value().0, m.value().1)).collect();
+            map_vector.sort_unstable_by(|a, b| b.2.cmp(&a.2));
+            if dimension > 0 {
+                map_vector.truncate(dimension.to_usize().expect("safe") - 1);
+            }
+            let mut survived_enums = HashSet::new();
+            column_map.clear();
+            for (data, enum_value, count) in map_vector {
+                column_map.insert(data.clone(), (enum_value, count));
+                survived_enums.insert(enum_value);
+            }
+            self.limit_enum_values(*column_index, &survived_enums, max_dimension);
+        }
+    }
+
+    pub fn limit_enum_values(&mut self, column_index: usize, survived_enums: &HashSet<u32>, others: u32) {
+        let cd: &mut ColumnData<u32> = self.columns[column_index].values_mut().unwrap();
+        for value in cd {
+            if !survived_enums.contains(value) {
+                *value = others;
+            }
+        }
     }
 }
 
