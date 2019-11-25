@@ -103,7 +103,7 @@ impl Table {
                             reverse_enum_map.insert(*enum_value, data.clone());
                         }
                     }
-                    reverse_enum_map.insert(0_u32, "_Not_mapped_".to_string()); // unmapped ones.
+                    reverse_enum_map.insert(0_u32, "_Small Amount_".to_string()); // unmapped ones.
                     reverse_enum_map.insert(4_294_967_295_u32, "_Err_".to_string()); // something wrong.
                     column.describe_enum(&reverse_enum_map)
                 } else {
@@ -171,11 +171,11 @@ impl Table {
         max_enum_portion: f64,
     ) {
         for map in enum_maps.iter() {
-            let column_index = map.key();
-            let column_map = map.value();
+            let (column_index, column_map) = (map.key(), map.value());
             let dimension = (*(enum_dimensions.get(column_index).unwrap_or(&max_dimension)))
                 .to_usize()
                 .expect("safe");
+
             let mut number_of_events = 0_usize;
             let mut map_vector: Vec<(String, u32, usize)> = column_map
                 .iter()
@@ -189,26 +189,25 @@ impl Table {
                 .to_usize()
                 .expect("safe");
 
-            if dimension > 0 {
-                // if dimension = 1, all should be set to 0_u32
-                let mut count_of_events = 0_usize;
-                let mut index = 0_usize;
-                for (i, m) in map_vector.iter().enumerate() {
-                    index = i;
-                    count_of_events += m.2;
-                    if count_of_events > max_of_events {
-                        break;
-                    }
+            let mut count_of_events = 0_usize;
+            let mut index = 0_usize;
+            for (i, m) in map_vector.iter().enumerate() {
+                index = i;
+                count_of_events += m.2;
+                if count_of_events > max_of_events {
+                    break;
                 }
-                let truncate_dimension = if index + 1 < dimension - 1 {
-                    index + 1
-                } else if dimension > 0 {
-                    dimension - 1
-                } else {
-                    0
-                };
-                map_vector.truncate(truncate_dimension);
             }
+
+            let truncate_dimension = if index + 1 < dimension - 1 {
+                index + 1
+            } else if dimension > 0 {
+                dimension - 1
+            } else {
+                0
+            };
+            map_vector.truncate(truncate_dimension);
+
             let mut mapped_enums = HashSet::new();
             column_map.clear();
             for (data, enum_value, count) in map_vector {
