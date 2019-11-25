@@ -10,6 +10,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Generated enum maps during parsing events. The enum value of each column starts with `1_u32`.
+- Limited enum dimensions by a user configuration, a predefined coverage of data, and a maximum dimension.
 
 ### Changed
 
