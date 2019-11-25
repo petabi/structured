@@ -16,8 +16,6 @@ use std::sync::Arc;
 
 use crate::{DataType, Schema};
 
-use log::info;
-
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const NUM_OF_TOP_N: usize = 30;
 
@@ -105,7 +103,8 @@ impl Table {
                             reverse_enum_map.insert(*enum_value, data.clone());
                         }
                     }
-                    reverse_enum_map.insert(0_u32, "###".to_string()); // ### means one of others which wasn't mapped.
+                    reverse_enum_map.insert(0_u32, "REs: Not mapped".to_string()); // means one of others which wasn't mapped.
+                    reverse_enum_map.insert(4294967295_u32, "REs: Error".to_string()); // means something wrong.
                     column.describe_enum(&reverse_enum_map)
                 } else {
                     column.describe()
@@ -182,7 +181,7 @@ impl Table {
             map_vector.sort_unstable_by(|a, b| b.2.cmp(&a.2));
             let max_of_events = (number_of_events.to_f64().expect("safe") * max_enum_portion).to_usize().expect("safe");
 
-            if dimension > 0 { // if dimension = 1, all set to MAX_ENUM_DIMENSION
+            if dimension > 0 { // if dimension = 1, all set to 0_u32
                 let mut count_of_events = 0_usize;
                 let mut index = 0_usize;
                 for (i, m) in map_vector.iter().enumerate() {
@@ -213,13 +212,10 @@ impl Table {
     pub fn limit_enum_values(&mut self, column_index: usize, survived_enums: &HashSet<u32>) {
         let cd: &mut ColumnData<u32> = self.columns[column_index].values_mut().unwrap();
         for value in cd {
-            if !survived_enums.contains(value) { // if others, enum values set to MAX_ENUM_DIMENSION.
+            if !survived_enums.contains(value) { // if others, enum values set to 0_u32.
                 *value = 0_u32;
-            } else {
-                info!("TEST: ============> {}", value);
             }
         }
-        info!("TEST: End of limit_enum_values");
     }
 }
 
@@ -385,18 +381,13 @@ impl Column {
     }
 
     pub fn describe_enum(&self, reverse_map: &HashMap<u32, String>) -> Description {
-        info!("TEST: describe_enum #1");
         let desc = self.describe();
 
         let (top_n, mode) = {
-            info!("TEST: describe_enum #2");
             if reverse_map.is_empty() {
-                info!("TEST: describe_enum #3");
                 (
                     match desc.get_top_n() {
-                        Some(top_n) => {
-                            info!("TEST: describe_enum #3-1");
-                            Some(top_n
+                        Some(top_n) => Some(top_n
                                 .iter()
                                 .map(|(v, c)| {
                                     if let DescriptionElement::UInt(value) = v {
@@ -406,12 +397,11 @@ impl Column {
                                     }
                                 })
                                 .collect(),
-                        )}
+                            ),
                         None => None,
                     },
                     match desc.get_mode() {
                         Some(mode) => {
-                            info!("TEST: describe_enum #3-2");
                             if let DescriptionElement::UInt(value) = mode {
                                 Some(DescriptionElement::Enum(value.to_string()))
                             } else {
@@ -422,14 +412,12 @@ impl Column {
                     },
                 )
             } else {
-                info!("TEST: describe_enum #4");
                 (
                     match desc.get_top_n() {
                         Some(top_n) => Some(
                             top_n
                                 .iter()
                                 .map(|(v, c)| {
-                                    info!("TEST: describe_enum #4-1");
                                     if let DescriptionElement::UInt(value) = v {
                                         (
                                             DescriptionElement::Enum(
@@ -447,7 +435,6 @@ impl Column {
                     },
                     match desc.get_mode() {
                         Some(mode) => {
-                            info!("TEST: describe_enum #4-2");
                             if let DescriptionElement::UInt(value) = mode {
                                 Some(DescriptionElement::Enum(
                                     reverse_map.get(&value).unwrap().to_string(),
@@ -462,7 +449,6 @@ impl Column {
             }
         };
 
-        info!("TEST: describe_enum #5");
         Description {
             count: desc.get_count(),
             unique_count: desc.get_unique_count(),
