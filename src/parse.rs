@@ -42,16 +42,16 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
                         .get_or_insert(
                             &val,
                             (
-                                (map.len() + 1).to_u32().unwrap_or(4_294_967_295_u32),
+                                (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
                                 0_usize,
                             ),
                         )
                         .0;
                     map.alter(&val, |v| (v.0, v.1 + 1));
                     enum_value
-                // 4_294_967_295 means something wrong, and 0 means unmapped. And, enum value starts with 1.
+                // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
                 } else {
-                    4_294_967_295_u32
+                    u32::max_value()
                 };
                 col.push(enum_value);
                 col
@@ -218,7 +218,7 @@ mod tests {
             &HashMap::new(),
         );
 
-        let c = Column::from(vec![4_294_967_295_u32]);
+        let c = Column::from(vec![u32::max_value()]);
         assert_eq!(c, result[0]);
     }
 }

@@ -104,7 +104,7 @@ impl Table {
                         }
                     }
                     reverse_enum_map.insert(0_u32, "_Small Amount_".to_string()); // unmapped ones.
-                    reverse_enum_map.insert(4_294_967_295_u32, "_Err_".to_string()); // something wrong.
+                    reverse_enum_map.insert(u32::max_value(), "_Err_".to_string()); // something wrong.
                     column.describe_enum(&reverse_enum_map)
                 } else {
                     column.describe()
@@ -433,7 +433,7 @@ impl Column {
                                             DescriptionElement::Enum(
                                                 reverse_map
                                                     .get(value)
-                                                    .unwrap_or(&"_NO_MAP_".to_string())
+                                                    .map_or("_NO_MAP_", |v| v)
                                                     .to_string(),
                                             ),
                                             *c,
