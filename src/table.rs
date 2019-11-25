@@ -450,10 +450,7 @@ impl Column {
                         Some(mode) => {
                             if let DescriptionElement::UInt(value) = mode {
                                 Some(DescriptionElement::Enum(
-                                    reverse_map
-                                        .get(&value)
-                                        .unwrap_or(&"_NO_MAP_".to_string())
-                                        .to_string(),
+                                    reverse_map.get(value).map_or("_NO_MAP_", |v| v).to_string(),
                                 ))
                             } else {
                                 None
