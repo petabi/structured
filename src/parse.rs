@@ -49,7 +49,7 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
                         .0;
                     map.alter(&val, |v| (v.0, v.1 + 1));
                     enum_value
-                // 4_294_967_295 means something wrong, and 0 means others. And, enum value starts with 1.
+                // 4_294_967_295 means something wrong, and 0 means unmapped. And, enum value starts with 1.
                 } else {
                     4_294_967_295_u32
                 };
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn missing_enum_map() {
         let schema = Schema::new(vec![Field::new(DataType::Enum)]);
-        let labels = HashMap::new();
+        let labels = HashMap::<usize, HashMap<String, u32>>::new();
 
         let row = vec!["1".to_string()];
         let records = vec![ByteRecord::from(row)];
@@ -218,7 +218,7 @@ mod tests {
             &HashMap::new(),
         );
 
-        let c = Column::from(vec![0_u32]);
+        let c = Column::from(vec![4_294_967_295_u32]);
         assert_eq!(c, result[0]);
     }
 }

@@ -103,8 +103,8 @@ impl Table {
                             reverse_enum_map.insert(*enum_value, data.clone());
                         }
                     }
-                    reverse_enum_map.insert(0_u32, "REs: Not mapped".to_string()); // unmapped ones.
-                    reverse_enum_map.insert(4_294_967_295_u32, "REs: Error".to_string()); // something wrong.
+                    reverse_enum_map.insert(0_u32, "_Not_mapped_".to_string()); // unmapped ones.
+                    reverse_enum_map.insert(4_294_967_295_u32, "_Err_".to_string()); // something wrong.
                     column.describe_enum(&reverse_enum_map)
                 } else {
                     column.describe()
@@ -432,7 +432,10 @@ impl Column {
                                     if let DescriptionElement::UInt(value) = v {
                                         (
                                             DescriptionElement::Enum(
-                                                reverse_map.get(value).unwrap().to_string(),
+                                                reverse_map
+                                                    .get(value)
+                                                    .unwrap_or(&"_NO_MAP_".to_string())
+                                                    .to_string(),
                                             ),
                                             *c,
                                         )
@@ -448,7 +451,10 @@ impl Column {
                         Some(mode) => {
                             if let DescriptionElement::UInt(value) = mode {
                                 Some(DescriptionElement::Enum(
-                                    reverse_map.get(&value).unwrap().to_string(),
+                                    reverse_map
+                                        .get(&value)
+                                        .unwrap_or(&"_NO_MAP_".to_string())
+                                        .to_string(),
                                 ))
                             } else {
                                 None
@@ -881,7 +887,7 @@ mod tests {
             ds[4].get_top_n().unwrap()[0].0
         );
         assert_eq!(
-            DescriptionElement::Enum("2".to_string()),
+            DescriptionElement::Enum("_NO_MAP_".to_string()),
             *ds[5].get_mode().unwrap()
         );
 
