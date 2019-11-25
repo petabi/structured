@@ -103,8 +103,8 @@ impl Table {
                             reverse_enum_map.insert(*enum_value, data.clone());
                         }
                     }
-                    reverse_enum_map.insert(0_u32, "REs: Not mapped".to_string()); // means one of others which wasn't mapped.
-                    reverse_enum_map.insert(4294967295_u32, "REs: Error".to_string()); // means something wrong.
+                    reverse_enum_map.insert(0_u32, "REs: Not mapped".to_string()); // unmapped ones.
+                    reverse_enum_map.insert(4_294_967_295_u32, "REs: Error".to_string()); // something wrong.
                     column.describe_enum(&reverse_enum_map)
                 } else {
                     column.describe()
@@ -162,26 +162,35 @@ impl Table {
         Ok(())
     }
 
-    pub fn limit_dimension(&mut self, 
-        enum_dimensions: &HashMap<usize, u32>, 
+    #[allow(clippy::type_complexity)]
+    pub fn limit_dimension(
+        &mut self,
+        enum_dimensions: &HashMap<usize, u32>,
         enum_maps: &Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>,
         max_dimension: u32,
-        max_enum_portion: f64) {
+        max_enum_portion: f64,
+    ) {
         for map in enum_maps.iter() {
             let column_index = map.key();
             let column_map = map.value();
-            let dimension = (*(enum_dimensions.get(column_index).unwrap_or(&max_dimension))).to_usize().expect("safe");
+            let dimension = (*(enum_dimensions.get(column_index).unwrap_or(&max_dimension)))
+                .to_usize()
+                .expect("safe");
             let mut number_of_events = 0_usize;
             let mut map_vector: Vec<(String, u32, usize)> = column_map
                 .iter()
                 .map(|m| {
                     number_of_events += m.value().1;
                     (m.key().clone(), m.value().0, m.value().1)
-                }).collect();
+                })
+                .collect();
             map_vector.sort_unstable_by(|a, b| b.2.cmp(&a.2));
-            let max_of_events = (number_of_events.to_f64().expect("safe") * max_enum_portion).to_usize().expect("safe");
+            let max_of_events = (number_of_events.to_f64().expect("safe") * max_enum_portion)
+                .to_usize()
+                .expect("safe");
 
-            if dimension > 0 { // if dimension = 1, all set to 0_u32
+            if dimension > 0 {
+                // if dimension = 1, all should be set to 0_u32
                 let mut count_of_events = 0_usize;
                 let mut index = 0_usize;
                 for (i, m) in map_vector.iter().enumerate() {
@@ -193,27 +202,28 @@ impl Table {
                 }
                 let truncate_dimension = if index + 1 < dimension - 1 {
                     index + 1
+                } else if dimension > 0 {
+                    dimension - 1
                 } else {
-                    if dimension > 0 { dimension - 1 }
-                    else { 0 }
+                    0
                 };
                 map_vector.truncate(truncate_dimension);
             }
-            let mut survived_enums = HashSet::new();
+            let mut mapped_enums = HashSet::new();
             column_map.clear();
             for (data, enum_value, count) in map_vector {
                 column_map.insert(data.clone(), (enum_value, count));
-                survived_enums.insert(enum_value);
+                mapped_enums.insert(enum_value);
             }
-            self.limit_enum_values(*column_index, &survived_enums);
+            self.limit_enum_values(*column_index, &mapped_enums);
         }
     }
 
-    pub fn limit_enum_values(&mut self, column_index: usize, survived_enums: &HashSet<u32>) {
+    pub fn limit_enum_values(&mut self, column_index: usize, mapped_enums: &HashSet<u32>) {
         let cd: &mut ColumnData<u32> = self.columns[column_index].values_mut().unwrap();
         for value in cd {
-            if !survived_enums.contains(value) { // if others, enum values set to 0_u32.
-                *value = 0_u32;
+            if !mapped_enums.contains(value) {
+                *value = 0_u32; // if unmapped out of the predefined rate, enum value set to 0_u32.
             }
         }
     }
@@ -387,7 +397,8 @@ impl Column {
             if reverse_map.is_empty() {
                 (
                     match desc.get_top_n() {
-                        Some(top_n) => Some(top_n
+                        Some(top_n) => Some(
+                            top_n
                                 .iter()
                                 .map(|(v, c)| {
                                     if let DescriptionElement::UInt(value) = v {
@@ -397,7 +408,7 @@ impl Column {
                                     }
                                 })
                                 .collect(),
-                            ),
+                        ),
                         None => None,
                     },
                     match desc.get_mode() {

@@ -7,8 +7,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
-
-
+#[allow(clippy::type_complexity)]
 pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     values: &[ByteRecord],
     schema: &Schema,
@@ -39,12 +38,20 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
             DataType::Enum => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 let enum_value = if let Some(map) = labels.get(&fid) {
-                    let enum_value = map.get_or_insert(&val, ((map.len() + 1).to_u32().unwrap_or(4294967295_u32), 0_usize)).0;
+                    let enum_value = map
+                        .get_or_insert(
+                            &val,
+                            (
+                                (map.len() + 1).to_u32().unwrap_or(4_294_967_295_u32),
+                                0_usize,
+                            ),
+                        )
+                        .0;
                     map.alter(&val, |v| (v.0, v.1 + 1));
                     enum_value
-                // 4294967295 means something wrong, and 0 means others. And, enum value starts with 1.
+                // 4_294_967_295 means something wrong, and 0 means others. And, enum value starts with 1.
                 } else {
-                    4294967295_u32
+                    4_294_967_295_u32
                 };
                 col.push(enum_value);
                 col
