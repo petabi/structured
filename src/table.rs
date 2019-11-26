@@ -91,7 +91,10 @@ impl Table {
         col.len()
     }
 
-    pub fn describe(&self, enum_maps: &HashMap<usize, HashMap<String, u32>>) -> Vec<Description> {
+    pub fn describe(
+        &self,
+        enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
+    ) -> Vec<Description> {
         self.columns
             .iter()
             .enumerate()
@@ -100,7 +103,7 @@ impl Table {
                     let mut reverse_enum_map = HashMap::<u32, String>::new();
                     if let Some(map) = enum_maps.get(&index) {
                         for (data, enum_value) in map {
-                            reverse_enum_map.insert(*enum_value, data.clone());
+                            reverse_enum_map.insert(enum_value.0, data.clone());
                         }
                     }
                     reverse_enum_map.insert(0_u32, "_Small Amount_".to_string()); // unmapped ones.
@@ -208,12 +211,7 @@ impl Table {
             };
             map_vector.truncate(truncate_dimension);
 
-            let mut mapped_enums = HashSet::new();
-            column_map.clear();
-            for (data, enum_value, count) in map_vector {
-                column_map.insert(data.clone(), (enum_value, count));
-                mapped_enums.insert(enum_value);
-            }
+            let mapped_enums = map_vector.iter().map(|v| v.1).collect();
             self.limit_enum_values(*column_index, &mapped_enums);
         }
     }
@@ -892,7 +890,7 @@ mod tests {
         c5_map.insert(2, "t2".to_string());
         c5_map.insert(7, "t3".to_string());
         let mut labels = HashMap::new();
-        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, k)).collect());
+        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
         let ds = table.describe(&labels);
 
         assert_eq!(4, ds[0].unique_count);
