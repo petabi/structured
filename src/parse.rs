@@ -94,7 +94,7 @@ mod tests {
     fn get_test_data() -> (
         Schema,
         Vec<ByteRecord>,
-        HashMap<usize, HashMap<String, u32>>,
+        HashMap<usize, HashMap<String, (u32, usize)>>,
         HashMap<usize, String>,
         Vec<Column>,
     ) {
@@ -164,7 +164,7 @@ mod tests {
         let mut formats = HashMap::new();
         formats.entry(4).or_insert(fmt.to_string());
         let mut labels = HashMap::new();
-        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, k)).collect());
+        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
 
         let c0 = Column::from(c0_v);
         let c1 = Column::from(c1_v);
@@ -177,14 +177,14 @@ mod tests {
     }
 
     pub fn convert_to_conc_enum_maps(
-        enum_maps: &HashMap<usize, HashMap<String, u32>>,
+        enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
     ) -> Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>> {
         let c_enum_maps = Arc::new(DashMap::default());
 
         for (column, map) in enum_maps {
             let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
             for (data, enum_val) in map {
-                c_map.insert(data.clone(), (*enum_val, 0_usize));
+                c_map.insert(data.clone(), (enum_val.0, enum_val.1));
             }
             c_enum_maps.insert(*column, c_map)
         }
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn missing_enum_map() {
         let schema = Schema::new(vec![Field::new(DataType::Enum)]);
-        let labels = HashMap::<usize, HashMap<String, u32>>::new();
+        let labels = HashMap::<usize, HashMap<String, (u32, usize)>>::new();
 
         let row = vec!["1".to_string()];
         let records = vec![ByteRecord::from(row)];
