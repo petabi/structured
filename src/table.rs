@@ -102,7 +102,7 @@ impl Table {
                             reverse_enum_map.insert(m.value().0, m.key().clone());
                         }
                     }
-                    reverse_enum_map.insert(0_u32, "_Small Amount_".to_string()); // unmapped ones.
+                    reverse_enum_map.insert(0_u32, "_Over One_".to_string()); // unmapped ones.
                     reverse_enum_map.insert(u32::max_value(), "_Err_".to_string()); // something wrong.
                     column.describe_enum(&reverse_enum_map)
                 } else {
