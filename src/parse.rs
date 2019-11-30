@@ -7,11 +7,12 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
-#[allow(clippy::type_complexity)]
+type ConcurrentEnumMap = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
+
 pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     values: &[ByteRecord],
     schema: &Schema,
-    labels: &Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>,
+    labels: &ConcurrentEnumMap,
     formats: &HashMap<usize, String, S>,
 ) -> Vec<Column> {
     let mut records: Vec<ByteRecordIter> = values.iter().map(ByteRecord::iter).collect();
