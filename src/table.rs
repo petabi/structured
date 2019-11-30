@@ -5,8 +5,7 @@ use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use statistical::*;
 use std::any::Any;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt;
 use std::hash::Hash;
@@ -82,20 +81,16 @@ impl Table {
     }
 
     /// Returns the number of rows in the table.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there is no column.
-    #[allow(dead_code)] // Used by tests only.
     pub fn num_rows(&self) -> usize {
-        let col = &self.columns[0];
-        col.len()
+        if self.columns.is_empty() {
+            0_usize
+        } else {
+            let col = &self.columns[0];
+            col.len()
+        }
     }
 
-    pub fn describe(
-        &self,
-        enum_maps: &ConcurrentEnumMap,
-    ) -> Vec<Description> {
+    pub fn describe(&self, enum_maps: &ConcurrentEnumMap) -> Vec<Description> {
         self.columns
             .iter()
             .enumerate()
@@ -166,11 +161,10 @@ impl Table {
         Ok(())
     }
 
-    #[allow(clippy::type_complexity)]
     pub fn limit_dimension(
         &mut self,
         enum_dimensions: &HashMap<usize, u32>,
-        enum_maps: &Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>,
+        enum_maps: &ConcurrentEnumMap,
         max_dimension: u32,
         max_enum_portion: f64,
     ) {
@@ -814,6 +808,22 @@ column_from!(String);
 column_from!(IpAddr);
 column_from!(NaiveDateTime);
 
+#[allow(dead_code)] // Used by tests only.
+pub fn convert_to_conc_enum_maps(
+    enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
+) -> ConcurrentEnumMap {
+    let c_enum_maps = Arc::new(DashMap::default());
+
+    for (column, map) in enum_maps {
+        let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
+        for (data, enum_val) in map {
+            c_map.insert(data.clone(), (enum_val.0, enum_val.1));
+        }
+        c_enum_maps.insert(*column, c_map)
+    }
+    c_enum_maps
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -821,21 +831,6 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
     use std::convert::TryFrom;
     use std::net::Ipv4Addr;
-
-    pub fn convert_to_conc_enum_maps(
-        enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
-    ) -> Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>> {
-        let c_enum_maps = Arc::new(DashMap::default());
-
-        for (column, map) in enum_maps {
-            let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
-            for (data, enum_val) in map {
-                c_map.insert(data.clone(), (enum_val.0, enum_val.1));
-            }
-            c_enum_maps.insert(*column, c_map)
-        }
-        c_enum_maps
-    }
 
     #[test]
     fn description_test() {
