@@ -431,7 +431,9 @@ impl Column {
                                                         let mut s = String::new();
                                                         for (i, e) in v.iter().enumerate() {
                                                             s.push_str(e);
-                                                            if i < v.len() - 1 { s.push_str("|") }
+                                                            if i < v.len() - 1 {
+                                                                s.push_str("|")
+                                                            }
                                                         }
                                                         s
                                                     },
@@ -456,7 +458,9 @@ impl Column {
                                         let mut s = String::new();
                                         for (i, e) in v.iter().enumerate() {
                                             s.push_str(e);
-                                            if i < v.len() - 1 { s.push_str("|") }
+                                            if i < v.len() - 1 {
+                                                s.push_str("|")
+                                            }
                                         }
                                         s
                                     },
