@@ -7,12 +7,12 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
-type ConcurrentEnumMap = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
+type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 
 pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     values: &[ByteRecord],
     schema: &Schema,
-    labels: &ConcurrentEnumMap,
+    labels: &ConcurrentEnumMaps,
     formats: &HashMap<usize, String, S>,
 ) -> Vec<Column> {
     let mut records: Vec<ByteRecordIter> = values.iter().map(ByteRecord::iter).collect();
@@ -88,8 +88,22 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
 mod tests {
     use super::*;
     use crate::datatypes::{DataType, Field};
-    use crate::table::convert_to_conc_enum_maps;
     use itertools::izip;
+
+    pub fn convert_to_conc_enum_maps(
+        enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
+    ) -> ConcurrentEnumMaps {
+        let c_enum_maps = Arc::new(DashMap::default());
+
+        for (column, map) in enum_maps {
+            let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
+            for (data, enum_val) in map {
+                c_map.insert(data.clone(), (enum_val.0, enum_val.1));
+            }
+            c_enum_maps.insert(*column, c_map)
+        }
+        c_enum_maps
+    }
 
     fn get_test_data() -> (
         Schema,
