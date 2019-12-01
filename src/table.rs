@@ -5,8 +5,7 @@ use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use statistical::*;
 use std::any::Any;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt;
 use std::hash::Hash;
@@ -20,6 +19,7 @@ const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const NUM_OF_TOP_N: usize = 30;
 
 type ColumnOfOneRow = DescriptionElement;
+type ConcurrentEnumMap = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 
 #[derive(Debug, Default, Clone)]
 pub struct Table {
@@ -81,20 +81,16 @@ impl Table {
     }
 
     /// Returns the number of rows in the table.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there is no column.
-    #[allow(dead_code)] // Used by tests only.
     pub fn num_rows(&self) -> usize {
-        let col = &self.columns[0];
-        col.len()
+        if self.columns.is_empty() {
+            0_usize
+        } else {
+            let col = &self.columns[0];
+            col.len()
+        }
     }
 
-    pub fn describe(
-        &self,
-        enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
-    ) -> Vec<Description> {
+    pub fn describe(&self, enum_maps: &ConcurrentEnumMap) -> Vec<Description> {
         self.columns
             .iter()
             .enumerate()
@@ -102,11 +98,11 @@ impl Table {
                 if column.inner.is::<ColumnData<u32>>() {
                     let mut reverse_enum_map = HashMap::<u32, String>::new();
                     if let Some(map) = enum_maps.get(&index) {
-                        for (data, enum_value) in map {
-                            reverse_enum_map.insert(enum_value.0, data.clone());
+                        for m in map.iter() {
+                            reverse_enum_map.insert(m.value().0, m.key().clone());
                         }
                     }
-                    reverse_enum_map.insert(0_u32, "_Small Amount_".to_string()); // unmapped ones.
+                    reverse_enum_map.insert(0_u32, "_Over One_".to_string()); // unmapped ones.
                     reverse_enum_map.insert(u32::max_value(), "_Err_".to_string()); // something wrong.
                     column.describe_enum(&reverse_enum_map)
                 } else {
@@ -165,11 +161,10 @@ impl Table {
         Ok(())
     }
 
-    #[allow(clippy::type_complexity)]
     pub fn limit_dimension(
         &mut self,
         enum_dimensions: &HashMap<usize, u32>,
-        enum_maps: &Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>,
+        enum_maps: &ConcurrentEnumMap,
         max_dimension: u32,
         max_enum_portion: f64,
     ) {
@@ -813,6 +808,22 @@ column_from!(String);
 column_from!(IpAddr);
 column_from!(NaiveDateTime);
 
+#[allow(dead_code)] // Used by tests only.
+pub fn convert_to_conc_enum_maps(
+    enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
+) -> ConcurrentEnumMap {
+    let c_enum_maps = Arc::new(DashMap::default());
+
+    for (column, map) in enum_maps {
+        let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
+        for (data, enum_val) in map {
+            c_map.insert(data.clone(), (enum_val.0, enum_val.1));
+        }
+        c_enum_maps.insert(*column, c_map)
+    }
+    c_enum_maps
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -864,7 +875,7 @@ mod tests {
         let table_org = Table::try_from(c_v).expect("invalid columns");
         let table = table_org.clone();
         move_table_add_row(table_org);
-        let ds = table.describe(&HashMap::new());
+        let ds = table.describe(&convert_to_conc_enum_maps(&HashMap::new()));
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -891,7 +902,7 @@ mod tests {
         c5_map.insert(7, "t3".to_string());
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
-        let ds = table.describe(&labels);
+        let ds = table.describe(&convert_to_conc_enum_maps(&labels));
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -925,7 +936,7 @@ mod tests {
         table
             .push_one_row(one_row, 1)
             .expect("Failure in adding a row");
-        let ds = table.describe(&HashMap::new());
+        let ds = table.describe(&convert_to_conc_enum_maps(&HashMap::new()));
         assert_eq!(DescriptionElement::Int(3), ds[0].get_top_n().unwrap()[0].0);
         assert_eq!(4, ds[0].get_top_n().unwrap()[0].1);
     }
