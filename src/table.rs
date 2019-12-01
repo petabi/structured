@@ -429,8 +429,9 @@ impl Column {
                                                     "_NO_MAP_".to_string(),
                                                     |v| {
                                                         let mut s = String::new();
-                                                        for e in v {
-                                                            s.push_str(e)
+                                                        for (i, e) in v.iter().enumerate() {
+                                                            s.push_str(e);
+                                                            if i < v.len() - 1 { s.push_str("|") }
                                                         }
                                                         s
                                                     },
@@ -453,8 +454,9 @@ impl Column {
                                     "_NO_MAP_".to_string(),
                                     |v| {
                                         let mut s = String::new();
-                                        for e in v {
-                                            s.push_str(e)
+                                        for (i, e) in v.iter().enumerate() {
+                                            s.push_str(e);
+                                            if i < v.len() - 1 { s.push_str("|") }
                                         }
                                         s
                                     },
