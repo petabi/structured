@@ -168,7 +168,9 @@ impl Table {
         enum_maps: &ConcurrentEnumMaps,
         max_dimension: u32,
         max_enum_portion: f64,
-    ) {
+    ) -> (HashMap<usize, u32>, HashMap<usize, u32>) {
+        let mut enum_portion_dimensions = HashMap::<usize, u32>::new();
+        let mut enum_set_dimensions = HashMap::<usize, u32>::new();
         for map in enum_maps.iter() {
             let (column_index, column_map) = (map.key(), map.value());
             let dimension = (*(enum_dimensions.get(column_index).unwrap_or(&max_dimension)))
@@ -187,7 +189,6 @@ impl Table {
             let max_of_events = (number_of_events.to_f64().expect("safe") * max_enum_portion)
                 .to_usize()
                 .expect("safe");
-
             let mut count_of_events = 0_usize;
             let mut index = 0_usize;
             for (i, m) in map_vector.iter().enumerate() {
@@ -207,9 +208,16 @@ impl Table {
             };
             map_vector.truncate(truncate_dimension);
 
+            enum_portion_dimensions.insert(*column_index, (index + 1).to_u32().expect("safe"));
+            enum_set_dimensions.insert(
+                *column_index,
+                (truncate_dimension + 1).to_u32().expect("safe"),
+            );
+
             let mapped_enums = map_vector.iter().map(|v| v.1).collect();
             self.limit_enum_values(*column_index, &mapped_enums);
         }
+        (enum_portion_dimensions, enum_set_dimensions)
     }
 
     fn limit_enum_values(&mut self, column_index: usize, mapped_enums: &HashSet<u32>) {
