@@ -19,7 +19,8 @@ const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const NUM_OF_TOP_N: usize = 30;
 
 type ColumnOfOneRow = DescriptionElement;
-type ConcurrentEnumMap = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
+type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
+type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
 
 #[derive(Debug, Default, Clone)]
 pub struct Table {
@@ -90,21 +91,21 @@ impl Table {
         }
     }
 
-    pub fn describe(&self, enum_maps: &ConcurrentEnumMap) -> Vec<Description> {
+    pub fn describe(&self, r_enum_maps: &ReverseEnumMaps) -> Vec<Description> {
         self.columns
             .iter()
             .enumerate()
             .map(|(index, column)| {
                 if column.inner.is::<ColumnData<u32>>() {
-                    let mut reverse_enum_map = HashMap::<u32, String>::new();
-                    if let Some(map) = enum_maps.get(&index) {
-                        for m in map.iter() {
-                            reverse_enum_map.insert(m.value().0, m.key().clone());
-                        }
+                    if let Some(m) = r_enum_maps.get(&index) {
+                        column.describe_enum(m)
+                    } else {
+                        // Unreachable. For tests only.
+                        let mut m_default = HashMap::<u32, Vec<String>>::new();
+                        m_default.insert(0_u32, vec!["_Over One_".to_string()]);
+                        m_default.insert(u32::max_value(), vec!["_Err_".to_string()]);
+                        column.describe_enum(&Arc::new(m_default))
                     }
-                    reverse_enum_map.insert(0_u32, "_Over One_".to_string()); // unmapped ones.
-                    reverse_enum_map.insert(u32::max_value(), "_Err_".to_string()); // something wrong.
-                    column.describe_enum(&reverse_enum_map)
                 } else {
                     column.describe()
                 }
@@ -164,10 +165,12 @@ impl Table {
     pub fn limit_dimension(
         &mut self,
         enum_dimensions: &HashMap<usize, u32>,
-        enum_maps: &ConcurrentEnumMap,
+        enum_maps: &ConcurrentEnumMaps,
         max_dimension: u32,
         max_enum_portion: f64,
-    ) {
+    ) -> (HashMap<usize, u32>, HashMap<usize, u32>) {
+        let mut enum_portion_dimensions = HashMap::<usize, u32>::new();
+        let mut enum_set_dimensions = HashMap::<usize, u32>::new();
         for map in enum_maps.iter() {
             let (column_index, column_map) = (map.key(), map.value());
             let dimension = (*(enum_dimensions.get(column_index).unwrap_or(&max_dimension)))
@@ -186,7 +189,6 @@ impl Table {
             let max_of_events = (number_of_events.to_f64().expect("safe") * max_enum_portion)
                 .to_usize()
                 .expect("safe");
-
             let mut count_of_events = 0_usize;
             let mut index = 0_usize;
             for (i, m) in map_vector.iter().enumerate() {
@@ -206,12 +208,19 @@ impl Table {
             };
             map_vector.truncate(truncate_dimension);
 
+            enum_portion_dimensions.insert(*column_index, (index + 1).to_u32().expect("safe"));
+            enum_set_dimensions.insert(
+                *column_index,
+                (truncate_dimension + 1).to_u32().expect("safe"),
+            );
+
             let mapped_enums = map_vector.iter().map(|v| v.1).collect();
             self.limit_enum_values(*column_index, &mapped_enums);
         }
+        (enum_portion_dimensions, enum_set_dimensions)
     }
 
-    pub fn limit_enum_values(&mut self, column_index: usize, mapped_enums: &HashSet<u32>) {
+    fn limit_enum_values(&mut self, column_index: usize, mapped_enums: &HashSet<u32>) {
         let cd: &mut ColumnData<u32> = self.columns[column_index].values_mut().unwrap();
         for value in cd {
             if !mapped_enums.contains(value) {
@@ -382,7 +391,7 @@ impl Column {
         self.inner.downcast_mut::<ColumnData<T>>()
     }
 
-    pub fn describe_enum(&self, reverse_map: &HashMap<u32, String>) -> Description {
+    pub fn describe_enum(&self, reverse_map: &Arc<HashMap<u32, Vec<String>>>) -> Description {
         let desc = self.describe();
 
         let (top_n, mode) = {
@@ -424,10 +433,19 @@ impl Column {
                                     if let DescriptionElement::UInt(value) = v {
                                         (
                                             DescriptionElement::Enum(
-                                                reverse_map
-                                                    .get(value)
-                                                    .map_or("_NO_MAP_", |v| v)
-                                                    .to_string(),
+                                                reverse_map.get(value).map_or(
+                                                    "_NO_MAP_".to_string(),
+                                                    |v| {
+                                                        let mut s = String::new();
+                                                        for (i, e) in v.iter().enumerate() {
+                                                            s.push_str(e);
+                                                            if i < v.len() - 1 {
+                                                                s.push_str("|")
+                                                            }
+                                                        }
+                                                        s
+                                                    },
+                                                ),
                                             ),
                                             *c,
                                         )
@@ -442,9 +460,19 @@ impl Column {
                     match desc.get_mode() {
                         Some(mode) => {
                             if let DescriptionElement::UInt(value) = mode {
-                                Some(DescriptionElement::Enum(
-                                    reverse_map.get(value).map_or("_NO_MAP_", |v| v).to_string(),
-                                ))
+                                Some(DescriptionElement::Enum(reverse_map.get(value).map_or(
+                                    "_NO_MAP_".to_string(),
+                                    |v| {
+                                        let mut s = String::new();
+                                        for (i, e) in v.iter().enumerate() {
+                                            s.push_str(e);
+                                            if i < v.len() - 1 {
+                                                s.push_str("|")
+                                            }
+                                        }
+                                        s
+                                    },
+                                )))
                             } else {
                                 None
                             }
@@ -808,22 +836,6 @@ column_from!(String);
 column_from!(IpAddr);
 column_from!(NaiveDateTime);
 
-#[allow(dead_code)] // Used by tests only.
-pub fn convert_to_conc_enum_maps(
-    enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
-) -> ConcurrentEnumMap {
-    let c_enum_maps = Arc::new(DashMap::default());
-
-    for (column, map) in enum_maps {
-        let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
-        for (data, enum_val) in map {
-            c_map.insert(data.clone(), (enum_val.0, enum_val.1));
-        }
-        c_enum_maps.insert(*column, c_map)
-    }
-    c_enum_maps
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -831,6 +843,33 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
     use std::convert::TryFrom;
     use std::net::Ipv4Addr;
+
+    fn reverse_enum_maps(
+        enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
+    ) -> Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>> {
+        Arc::new(
+            enum_maps
+                .iter()
+                .filter_map(|(index, map)| {
+                    if map.is_empty() {
+                        None
+                    } else {
+                        let mut r_map_column = HashMap::<u32, Vec<String>>::new();
+                        for (s, e) in map {
+                            if let Some(v) = r_map_column.get_mut(&e.0) {
+                                v.push(s.clone());
+                            } else {
+                                r_map_column.insert(e.0, vec![s.clone()]);
+                            }
+                        }
+                        r_map_column.insert(0_u32, vec!["_Over One_".to_string()]); // unmapped ones.
+                        r_map_column.insert(u32::max_value(), vec!["_Err_".to_string()]); // something wrong.
+                        Some((*index, Arc::new(r_map_column)))
+                    }
+                })
+                .collect(),
+        )
+    }
 
     #[test]
     fn description_test() {
@@ -875,7 +914,7 @@ mod tests {
         let table_org = Table::try_from(c_v).expect("invalid columns");
         let table = table_org.clone();
         move_table_add_row(table_org);
-        let ds = table.describe(&convert_to_conc_enum_maps(&HashMap::new()));
+        let ds = table.describe(&reverse_enum_maps(&HashMap::new()));
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -902,7 +941,7 @@ mod tests {
         c5_map.insert(7, "t3".to_string());
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
-        let ds = table.describe(&convert_to_conc_enum_maps(&labels));
+        let ds = table.describe(&reverse_enum_maps(&labels));
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -936,7 +975,7 @@ mod tests {
         table
             .push_one_row(one_row, 1)
             .expect("Failure in adding a row");
-        let ds = table.describe(&convert_to_conc_enum_maps(&HashMap::new()));
+        let ds = table.describe(&reverse_enum_maps(&HashMap::new()));
         assert_eq!(DescriptionElement::Int(3), ds[0].get_top_n().unwrap()[0].0);
         assert_eq!(4, ds[0].get_top_n().unwrap()[0].1);
     }
