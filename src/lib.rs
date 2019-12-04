@@ -1,3 +1,4 @@
+mod arrays;
 mod bitmap;
 mod buffer;
 mod datatypes;
