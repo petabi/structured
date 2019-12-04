@@ -21,17 +21,19 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
         .iter()
         .enumerate()
         .map(|(fid, field)| match field.data_type() {
-            DataType::Int => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+            DataType::Int64 => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 col.push(val.parse::<i64>().unwrap_or_default());
                 col
             })),
-            DataType::Float => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                col.push(val.parse::<f64>().unwrap_or_default());
-                col
-            })),
-            DataType::Str => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+            DataType::Float64 => {
+                Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                    let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
+                    col.push(val.parse::<f64>().unwrap_or_default());
+                    col
+                }))
+            }
+            DataType::Utf8 => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 col.push(val);
                 col
@@ -168,10 +170,10 @@ mod tests {
             records.push(ByteRecord::from(row));
         }
         let schema = Schema::new(vec![
-            Field::new(DataType::Int),
-            Field::new(DataType::Str),
+            Field::new(DataType::Int64),
+            Field::new(DataType::Utf8),
             Field::new(DataType::IpAddr),
-            Field::new(DataType::Float),
+            Field::new(DataType::Float64),
             Field::new(DataType::DateTime),
             Field::new(DataType::Enum),
         ]);
