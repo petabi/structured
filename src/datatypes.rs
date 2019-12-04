@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -14,7 +15,7 @@ pub enum DataType {
     Utf8,
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct Field {
     data_type: DataType,
 }
@@ -50,17 +51,33 @@ impl Field {
     }
 }
 
-#[derive(Clone, Debug)]
+/// Describes the meta-data of an ordered sequence of relative types.
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Schema {
     fields: Vec<Field>,
+    /// A map of key-value pairs containing additional meta data.
+    #[serde(default)]
+    pub(crate) metadata: HashMap<String, String>,
 }
 
 impl Schema {
+    /// Creates a new `Schema` from a sequence of `Field` values
     pub fn new(fields: Vec<Field>) -> Self {
-        Self { fields }
+        Self::with_metadata(fields, HashMap::new())
+    }
+
+    /// Creates a new `Schema` from a sequence of `Field` values
+    /// and adds additional metadata in form of key value pairs.
+    pub fn with_metadata(fields: Vec<Field>, metadata: HashMap<String, String>) -> Self {
+        Self { fields, metadata }
     }
 
     pub fn fields(&self) -> &[Field] {
         &self.fields
+    }
+
+    /// Returns an immutable reference to the Map of custom metadata key-value pairs.
+    pub fn metadata(&self) -> &HashMap<String, String> {
+        &self.metadata
     }
 }
