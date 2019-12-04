@@ -6,12 +6,12 @@ use std::str::FromStr;
 /// Supported types.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Copy)]
 pub enum DataType {
-    Int,
-    Float,
+    Int64,
+    Float64,
     DateTime,
     IpAddr,
     Enum,
-    Str,
+    Utf8,
 }
 
 #[derive(Clone, Debug, Copy)]
