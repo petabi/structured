@@ -198,16 +198,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn schema_json() {
+    fn schema_to_json() {
         let metadata: HashMap<String, String> = [("Key".to_string(), "Value".to_string())]
             .iter()
             .cloned()
             .collect();
         let schema = Schema::with_metadata(vec![Field::new(DataType::Utf8)], metadata);
-
         assert_eq!(
             serde_json::to_string(&schema).unwrap(),
             r#"{"fields":[{"type":{"name":"utf8"}}],"metadata":{"Key":"Value"}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::Int64)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"int","bitWidth":64,"isSigned":true}}],"metadata":{}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::Float64)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"floatingpoint","precision":"DOUBLE"}}],"metadata":{}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::DateTime)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"timestamp","unit":"SECOND"}}],"metadata":{}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::IpAddr)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"ipv4","bitWidth":32,"isSigned":false}}],"metadata":{}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::Enum)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"int","bitWidth":32,"isSigned":false}}],"metadata":{}}"#
         );
     }
 }
