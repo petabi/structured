@@ -41,7 +41,7 @@ impl Table {
                 DataType::Int64 => Column::new::<i64>(),
                 DataType::Float64 => Column::new::<f64>(),
                 DataType::Utf8 => Column::new::<String>(),
-                DataType::Enum => Column::new::<u32>(),
+                DataType::UInt32 => Column::new::<u32>(),
                 DataType::IpAddr => Column::new::<IpAddr>(),
                 DataType::DateTime => Column::new::<NaiveDateTime>(),
             })

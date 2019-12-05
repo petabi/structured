@@ -12,10 +12,10 @@ use std::str::FromStr;
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum DataType {
     Int64,
+    UInt32,
     Float64,
     DateTime,
     IpAddr,
-    Enum,
     Utf8,
 }
 
@@ -57,7 +57,7 @@ impl<'de> Visitor<'de> for DataTypeVisitor {
             Some("floatingpoint") => Ok(DataType::Float64),
             Some("int") => match props.is_signed {
                 Some(true) => Ok(DataType::Int64),
-                Some(false) => Ok(DataType::Enum),
+                Some(false) => Ok(DataType::UInt32),
                 None => Err(A::Error::custom("isSigned missing or invalid")),
             },
             Some("timestamp") => Ok(DataType::DateTime),
@@ -114,7 +114,7 @@ impl Serialize for DataType {
                 map.serialize_entry("isSigned", &false)?;
                 map.end()
             }
-            Self::Enum => {
+            Self::UInt32 => {
                 let mut map = serializer.serialize_map(Some(3))?;
                 map.serialize_entry("name", "int")?;
                 map.serialize_entry("bitWidth", &32)?;
@@ -233,7 +233,7 @@ mod tests {
             r#"{"fields":[{"type":{"name":"ipv4","bitWidth":32,"isSigned":false}}],"metadata":{}}"#
         );
 
-        let schema = Schema::new(vec![Field::new(DataType::Enum)]);
+        let schema = Schema::new(vec![Field::new(DataType::UInt32)]);
         assert_eq!(
             serde_json::to_string(&schema).unwrap(),
             r#"{"fields":[{"type":{"name":"int","bitWidth":32,"isSigned":false}}],"metadata":{}}"#

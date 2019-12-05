@@ -38,7 +38,7 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
                 col.push(val);
                 col
             })),
-            DataType::Enum => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+            DataType::UInt32 => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                 let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                 let enum_value = if let Some(map) = labels.get(&fid) {
                     let enum_value = map
@@ -175,7 +175,7 @@ mod tests {
             Field::new(DataType::IpAddr),
             Field::new(DataType::Float64),
             Field::new(DataType::DateTime),
-            Field::new(DataType::Enum),
+            Field::new(DataType::UInt32),
         ]);
         let mut formats = HashMap::new();
         formats.entry(4).or_insert(fmt.to_string());
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn missing_enum_map() {
-        let schema = Schema::new(vec![Field::new(DataType::Enum)]);
+        let schema = Schema::new(vec![Field::new(DataType::UInt32)]);
         let labels = HashMap::<usize, HashMap<String, (u32, usize)>>::new();
 
         let row = vec!["1".to_string()];
