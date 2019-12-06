@@ -1,6 +1,7 @@
 mod arrays;
 mod bitmap;
 mod buffer;
+pub mod csv;
 mod datatypes;
 mod memory;
 mod parse;
