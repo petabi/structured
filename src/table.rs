@@ -9,7 +9,6 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt;
 use std::hash::Hash;
-use std::net::IpAddr;
 use std::slice::Iter;
 use std::sync::Arc;
 
@@ -42,7 +41,6 @@ impl Table {
                 DataType::Float64 => Column::new::<f64>(),
                 DataType::Utf8 => Column::new::<String>(),
                 DataType::UInt32 => Column::new::<u32>(),
-                DataType::IpAddr => Column::new::<IpAddr>(),
                 DataType::DateTime => Column::new::<NaiveDateTime>(),
             })
             .collect();
@@ -96,16 +94,8 @@ impl Table {
             .iter()
             .enumerate()
             .map(|(index, column)| {
-                if column.inner.is::<ColumnData<u32>>() {
-                    if let Some(m) = r_enum_maps.get(&index) {
-                        column.describe_enum(m)
-                    } else {
-                        // Unreachable. For tests only.
-                        let mut m_default = HashMap::<u32, Vec<String>>::new();
-                        m_default.insert(0_u32, vec!["_Over One_".to_string()]);
-                        m_default.insert(u32::max_value(), vec!["_Err_".to_string()]);
-                        column.describe_enum(&Arc::new(m_default))
-                    }
+                if let Some(m) = r_enum_maps.get(&index) {
+                    column.describe_enum(m)
                 } else {
                     column.describe()
                 }
@@ -141,11 +131,6 @@ impl Table {
                 }
                 ColumnOfOneRow::Text(v) => {
                     if let Some(c) = col.values_mut::<String>() {
-                        c.push(v)
-                    };
-                }
-                ColumnOfOneRow::IpAddr(v) => {
-                    if let Some(c) = col.values_mut::<IpAddr>() {
                         c.push(v)
                     };
                 }
@@ -354,8 +339,6 @@ impl Column {
             column_len!(self, u32);
         } else if self.inner.is::<ColumnData<String>>() {
             column_len!(self, String);
-        } else if self.inner.is::<ColumnData<IpAddr>>() {
-            column_len!(self, IpAddr);
         } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
             column_len!(self, NaiveDateTime);
         } else {
@@ -372,8 +355,6 @@ impl Column {
             column_append!(self.inner, other.inner, u32);
         } else if self.inner.is::<ColumnData<String>>() {
             column_append!(self.inner, other.inner, String);
-        } else if self.inner.is::<ColumnData<IpAddr>>() {
-            column_append!(self.inner, other.inner, IpAddr);
         } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
             column_append!(self.inner, other.inner, NaiveDateTime);
         } else {
@@ -527,9 +508,6 @@ impl Column {
         } else if self.inner.is::<ColumnData<String>>() {
             let cd: &ColumnData<String> = self.values().unwrap();
             describe_top_n!(cd, desc, DescriptionElement::Text);
-        } else if self.inner.is::<ColumnData<IpAddr>>() {
-            let cd: &ColumnData<IpAddr> = self.values().unwrap();
-            describe_top_n!(cd, desc, DescriptionElement::IpAddr);
         } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
             let cd: &ColumnData<NaiveDateTime> = self.values().unwrap();
 
@@ -566,11 +544,6 @@ impl Clone for Column {
             }
         } else if self.inner.is::<ColumnData<String>>() {
             let cd: &ColumnData<String> = self.values().unwrap();
-            Self {
-                inner: Box::new(cd.clone()),
-            }
-        } else if self.inner.is::<ColumnData<IpAddr>>() {
-            let cd: &ColumnData<IpAddr> = self.values().unwrap();
             Self {
                 inner: Box::new(cd.clone()),
             }
@@ -616,13 +589,6 @@ impl PartialEq for Column {
             return self.inner.downcast_ref::<ColumnData<String>>().unwrap()
                 == other.inner.downcast_ref::<ColumnData<String>>().unwrap();
         }
-        if self.inner.is::<ColumnData<IpAddr>>() {
-            if !other.inner.is::<ColumnData<IpAddr>>() {
-                return false;
-            }
-            return self.inner.downcast_ref::<ColumnData<IpAddr>>().unwrap()
-                == other.inner.downcast_ref::<ColumnData<IpAddr>>().unwrap();
-        }
         if self.inner.is::<ColumnData<NaiveDateTime>>() {
             if !other.inner.is::<ColumnData<NaiveDateTime>>() {
                 return false;
@@ -648,7 +614,6 @@ pub enum DescriptionElement {
     Float(f64),
     FloatRange(f64, f64),
     Text(String),
-    IpAddr(IpAddr),
     DateTime(NaiveDateTime),
 }
 
@@ -660,7 +625,6 @@ impl fmt::Display for DescriptionElement {
             Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
             Self::Float(x) => write!(f, "{}", x),
             Self::FloatRange(x, y) => write!(f, "({} - {})", x, y),
-            Self::IpAddr(x) => write!(f, "{}", x),
             Self::DateTime(x) => write!(f, "{}", x),
         }
     }
@@ -833,7 +797,6 @@ column_from!(i64);
 column_from!(f64);
 column_from!(u32);
 column_from!(String);
-column_from!(IpAddr);
 column_from!(NaiveDateTime);
 
 #[cfg(test)]
@@ -883,14 +846,14 @@ mod tests {
             "111a qwer".to_string(),
             "111a qwer".to_string(),
         ];
-        let c2_v: Vec<IpAddr> = vec![
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 4)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
+        let c2_v: Vec<u32> = vec![
+            Ipv4Addr::new(127, 0, 0, 1).into(),
+            Ipv4Addr::new(127, 0, 0, 2).into(),
+            Ipv4Addr::new(127, 0, 0, 3).into(),
+            Ipv4Addr::new(127, 0, 0, 4).into(),
+            Ipv4Addr::new(127, 0, 0, 2).into(),
+            Ipv4Addr::new(127, 0, 0, 2).into(),
+            Ipv4Addr::new(127, 0, 0, 3).into(),
         ];
         let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
         let c4_v: Vec<NaiveDateTime> = vec![
@@ -922,7 +885,7 @@ mod tests {
             *ds[1].get_mode().unwrap()
         );
         assert_eq!(
-            DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
+            DescriptionElement::UInt(Ipv4Addr::new(127, 0, 0, 3).into()),
             ds[2].get_top_n().unwrap()[1].0
         );
         assert_eq!(3, ds[3].unique_count);
@@ -930,10 +893,7 @@ mod tests {
             DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
             ds[4].get_top_n().unwrap()[0].0
         );
-        assert_eq!(
-            DescriptionElement::Enum("_NO_MAP_".to_string()),
-            *ds[5].get_mode().unwrap()
-        );
+        assert_eq!(3, ds[5].unique_count);
 
         let mut c5_map: HashMap<u32, String> = HashMap::new();
         c5_map.insert(1, "t1".to_string());
@@ -949,7 +909,7 @@ mod tests {
             *ds[1].get_mode().unwrap()
         );
         assert_eq!(
-            DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
+            DescriptionElement::UInt(Ipv4Addr::new(127, 0, 0, 3).into()),
             ds[2].get_top_n().unwrap()[1].0
         );
         assert_eq!(3, ds[3].unique_count);
@@ -967,7 +927,7 @@ mod tests {
         let one_row: Vec<ColumnOfOneRow> = vec![
             ColumnOfOneRow::Int(3),
             ColumnOfOneRow::Text("Hundred".to_string()),
-            ColumnOfOneRow::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 100))),
+            ColumnOfOneRow::UInt(Ipv4Addr::new(127, 0, 0, 100).into()),
             ColumnOfOneRow::Float(100.100),
             ColumnOfOneRow::DateTime(NaiveDate::from_ymd(2019, 10, 10).and_hms(10, 10, 10)),
             ColumnOfOneRow::UInt(7),

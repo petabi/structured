@@ -4,7 +4,7 @@ use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use csv::{ByteRecord, ByteRecordIter};
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
@@ -50,9 +50,7 @@ pub fn records_to_columns(
             FieldParser::IpAddr(parse) => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let v = v.next().unwrap();
-                    col.push(
-                        parse(v).unwrap_or_else(|_| IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255))),
-                    );
+                    col.push(parse(v).unwrap_or_else(|_| Ipv4Addr::new(255, 255, 255, 255).into()));
                     col
                 }))
             }
@@ -132,14 +130,14 @@ mod tests {
             "111a qwer".to_string(),
             "111a qwer".to_string(),
         ];
-        let c2_v: Vec<IpAddr> = vec![
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 4)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
+        let c2_v: Vec<Ipv4Addr> = vec![
+            Ipv4Addr::new(127, 0, 0, 1),
+            Ipv4Addr::new(127, 0, 0, 2),
+            Ipv4Addr::new(127, 0, 0, 3),
+            Ipv4Addr::new(127, 0, 0, 4),
+            Ipv4Addr::new(127, 0, 0, 2),
+            Ipv4Addr::new(127, 0, 0, 2),
+            Ipv4Addr::new(127, 0, 0, 3),
         ];
         let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
         let c4_v: Vec<NaiveDateTime> = vec![
@@ -182,7 +180,7 @@ mod tests {
             FieldParser::Utf8,
             FieldParser::new_ipaddr(|v| {
                 let val: String = v.iter().map(|&c| c as char).collect();
-                val.parse::<IpAddr>()
+                val.parse::<Ipv4Addr>().map(Into::into)
             }),
             FieldParser::Float64,
             FieldParser::new_datetime(move |v| {
@@ -196,7 +194,11 @@ mod tests {
 
         let c0 = Column::from(c0_v);
         let c1 = Column::from(c1_v);
-        let c2 = Column::from(c2_v);
+        let c2 = Column::from(
+            c2_v.iter()
+                .map(|&v| -> u32 { v.into() })
+                .collect::<Vec<_>>(),
+        );
         let c3 = Column::from(c3_v);
         let c4 = Column::from(c4_v);
         let c5 = Column::from(c5_v);

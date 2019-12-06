@@ -1,10 +1,10 @@
 use chrono::format::ParseError as TimeParseError;
 use chrono::NaiveDateTime;
 use std::fmt;
-use std::net::{AddrParseError, IpAddr};
+use std::net::AddrParseError;
 use std::sync::Arc;
 
-pub type IpAddrParser = dyn Fn(&[u8]) -> Result<IpAddr, AddrParseError> + Send + Sync;
+pub type IpAddrParser = dyn Fn(&[u8]) -> Result<u32, AddrParseError> + Send + Sync;
 pub type DateTimeParser = dyn Fn(&[u8]) -> Result<NaiveDateTime, TimeParseError> + Send + Sync;
 
 #[derive(Clone)]
@@ -21,7 +21,7 @@ pub enum FieldParser {
 impl FieldParser {
     pub fn new_ipaddr<P>(parser: P) -> Self
     where
-        P: Fn(&[u8]) -> Result<IpAddr, AddrParseError> + Send + Sync + 'static,
+        P: Fn(&[u8]) -> Result<u32, AddrParseError> + Send + Sync + 'static,
     {
         Self::IpAddr(Arc::new(parser))
     }
