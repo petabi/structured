@@ -1,84 +1,93 @@
-use crate::{Column, DataType, Schema};
+use crate::csv::FieldParser;
+use crate::Column;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use csv::{ByteRecord, ByteRecordIter};
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
-use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 
-pub fn records_to_columns<S: ::std::hash::BuildHasher>(
+pub fn records_to_columns(
     values: &[ByteRecord],
-    schema: &Schema,
+    parsers: &[FieldParser],
     labels: &ConcurrentEnumMaps,
-    formats: &HashMap<usize, String, S>,
 ) -> Vec<Column> {
     let mut records: Vec<ByteRecordIter> = values.iter().map(ByteRecord::iter).collect();
-    schema
-        .fields()
+    parsers
         .iter()
         .enumerate()
-        .map(|(fid, field)| match field.data_type() {
-            DataType::Int64 => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                col.push(val.parse::<i64>().unwrap_or_default());
-                col
-            })),
-            DataType::Float64 => {
+        .map(|(fid, parser)| match parser {
+            FieldParser::Int64 => {
+                Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                    let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
+                    col.push(val.parse::<i64>().unwrap_or_default());
+                    col
+                }))
+            }
+            FieldParser::Float64 => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
                     col.push(val.parse::<f64>().unwrap_or_default());
                     col
                 }))
             }
-            DataType::Utf8 => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                col.push(val);
-                col
-            })),
-            DataType::UInt32 => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                let enum_value = if let Some(map) = labels.get(&fid) {
-                    let enum_value = map
-                        .get_or_insert(
-                            &val,
-                            (
-                                (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
-                                0_usize,
-                            ),
-                        )
-                        .0;
-                    map.alter(&val, |v| (v.0, v.1 + 1));
-                    enum_value
-                // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
-                } else {
-                    u32::max_value()
-                };
-                col.push(enum_value);
-                col
-            })),
-            DataType::IpAddr => Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                col.push(
-                    val.parse::<IpAddr>()
-                        .unwrap_or_else(|_| IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255))),
-                );
-                col
-            })),
-            DataType::DateTime => {
+            FieldParser::Utf8 => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                    let fmt = formats.get(&fid).unwrap();
+                    col.push(val);
+                    col
+                }))
+            }
+            FieldParser::UInt32 => {
+                Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                    let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
+                    col.push(val.parse::<u32>().unwrap_or_default());
+                    col
+                }))
+            }
+            FieldParser::IpAddr(parse) => {
+                Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                    let v = v.next().unwrap();
                     col.push(
-                        NaiveDateTime::parse_from_str(&val, fmt).unwrap_or_else(|_| {
-                            NaiveDateTime::new(
-                                NaiveDate::from_ymd(1, 1, 1),
-                                NaiveTime::from_hms(0, 0, 0),
-                            )
-                        }),
+                        parse(v).unwrap_or_else(|_| IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255))),
                     );
+                    col
+                }))
+            }
+            FieldParser::DateTime(parse) => {
+                Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                    let v = v.next().unwrap();
+                    col.push(parse(v).unwrap_or_else(|_| {
+                        NaiveDateTime::new(
+                            NaiveDate::from_ymd(1, 1, 1),
+                            NaiveTime::from_hms(0, 0, 0),
+                        )
+                    }));
+                    col
+                }))
+            }
+            FieldParser::Dict => {
+                Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
+                    let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
+                    let enum_value = if let Some(map) = labels.get(&fid) {
+                        let enum_value = map
+                            .get_or_insert(
+                                &val,
+                                (
+                                    (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
+                                    0_usize,
+                                ),
+                            )
+                            .0;
+                        map.alter(&val, |v| (v.0, v.1 + 1));
+                        enum_value
+                    // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
+                    } else {
+                        u32::max_value()
+                    };
+                    col.push(enum_value);
                     col
                 }))
             }
@@ -89,8 +98,8 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datatypes::{DataType, Field};
     use itertools::izip;
+    use std::collections::HashMap;
 
     pub fn convert_to_conc_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
@@ -108,10 +117,9 @@ mod tests {
     }
 
     fn get_test_data() -> (
-        Schema,
+        [FieldParser; 6],
         Vec<ByteRecord>,
         HashMap<usize, HashMap<String, (u32, usize)>>,
-        HashMap<usize, String>,
         Vec<Column>,
     ) {
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
@@ -169,16 +177,20 @@ mod tests {
             row.push(c5_map.get(c5).unwrap().to_string());
             records.push(ByteRecord::from(row));
         }
-        let schema = Schema::new(vec![
-            Field::new(DataType::Int64),
-            Field::new(DataType::Utf8),
-            Field::new(DataType::IpAddr),
-            Field::new(DataType::Float64),
-            Field::new(DataType::DateTime),
-            Field::new(DataType::UInt32),
-        ]);
-        let mut formats = HashMap::new();
-        formats.entry(4).or_insert(fmt.to_string());
+        let parsers = [
+            FieldParser::Int64,
+            FieldParser::Utf8,
+            FieldParser::new_ipaddr(|v| {
+                let val: String = v.iter().map(|&c| c as char).collect();
+                val.parse::<IpAddr>()
+            }),
+            FieldParser::Float64,
+            FieldParser::new_datetime(move |v| {
+                let val: String = v.iter().map(|&c| c as char).collect();
+                NaiveDateTime::parse_from_str(&val, fmt)
+            }),
+            FieldParser::Dict,
+        ];
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
 
@@ -189,24 +201,23 @@ mod tests {
         let c4 = Column::from(c4_v);
         let c5 = Column::from(c5_v);
         let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
-        (schema, records, labels, formats, columns)
+        (parsers, records, labels, columns)
     }
 
     #[test]
     fn parse_records() {
-        let (schema, records, labels, formats, columns) = get_test_data();
+        let (parsers, records, labels, columns) = get_test_data();
         let result = super::records_to_columns(
             records.as_slice(),
-            &schema,
+            &parsers,
             &convert_to_conc_enum_maps(&labels),
-            &formats,
         );
         assert_eq!(result, columns);
     }
 
     #[test]
     fn missing_enum_map() {
-        let schema = Schema::new(vec![Field::new(DataType::UInt32)]);
+        let parsers = [FieldParser::Dict];
         let labels = HashMap::<usize, HashMap<String, (u32, usize)>>::new();
 
         let row = vec!["1".to_string()];
@@ -214,9 +225,8 @@ mod tests {
 
         let result = super::records_to_columns(
             records.as_slice(),
-            &schema,
+            &parsers,
             &convert_to_conc_enum_maps(&labels),
-            &HashMap::new(),
         );
 
         let c = Column::from(vec![u32::max_value()]);
