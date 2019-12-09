@@ -4,7 +4,6 @@ use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use csv::{ByteRecord, ByteRecordIter};
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
-use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
@@ -40,19 +39,10 @@ pub fn records_to_columns(
                     col
                 }))
             }
-            FieldParser::UInt32 => {
-                Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                    let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                    col.push(val.parse::<u32>().unwrap_or_default());
-                    col
-                }))
-            }
-            FieldParser::IpAddr(parse) => {
+            FieldParser::UInt32(parse) => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let v = v.next().unwrap();
-                    col.push(
-                        parse(v).unwrap_or_else(|_| IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255))),
-                    );
+                    col.push(parse(v).unwrap_or_default());
                     col
                 }))
             }
@@ -100,6 +90,7 @@ mod tests {
     use super::*;
     use itertools::izip;
     use std::collections::HashMap;
+    use std::net::Ipv4Addr;
 
     pub fn convert_to_conc_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
@@ -132,14 +123,14 @@ mod tests {
             "111a qwer".to_string(),
             "111a qwer".to_string(),
         ];
-        let c2_v: Vec<IpAddr> = vec![
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 4)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
+        let c2_v: Vec<Ipv4Addr> = vec![
+            Ipv4Addr::new(127, 0, 0, 1),
+            Ipv4Addr::new(127, 0, 0, 2),
+            Ipv4Addr::new(127, 0, 0, 3),
+            Ipv4Addr::new(127, 0, 0, 4),
+            Ipv4Addr::new(127, 0, 0, 2),
+            Ipv4Addr::new(127, 0, 0, 2),
+            Ipv4Addr::new(127, 0, 0, 3),
         ];
         let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
         let c4_v: Vec<NaiveDateTime> = vec![
@@ -180,9 +171,9 @@ mod tests {
         let parsers = [
             FieldParser::Int64,
             FieldParser::Utf8,
-            FieldParser::new_ipaddr(|v| {
+            FieldParser::uint32_with_parser(|v| {
                 let val: String = v.iter().map(|&c| c as char).collect();
-                val.parse::<IpAddr>()
+                val.parse::<Ipv4Addr>().map(Into::into).map_err(Into::into)
             }),
             FieldParser::Float64,
             FieldParser::new_datetime(move |v| {
@@ -196,7 +187,11 @@ mod tests {
 
         let c0 = Column::from(c0_v);
         let c1 = Column::from(c1_v);
-        let c2 = Column::from(c2_v);
+        let c2 = Column::from(
+            c2_v.iter()
+                .map(|&v| -> u32 { v.into() })
+                .collect::<Vec<_>>(),
+        );
         let c3 = Column::from(c3_v);
         let c4 = Column::from(c4_v);
         let c5 = Column::from(c5_v);

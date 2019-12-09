@@ -15,7 +15,6 @@ pub enum DataType {
     UInt32,
     Float64,
     DateTime,
-    IpAddr,
     Utf8,
 }
 
@@ -61,7 +60,6 @@ impl<'de> Visitor<'de> for DataTypeVisitor {
                 None => Err(A::Error::custom("isSigned missing or invalid")),
             },
             Some("timestamp") => Ok(DataType::DateTime),
-            Some("ipaddr") => Ok(DataType::IpAddr),
             Some(name) => Err(A::Error::custom(format!("unknown type name: {}", name))),
             None => Err(A::Error::custom("no type name")),
         }
@@ -105,13 +103,6 @@ impl Serialize for DataType {
                 let mut map = serializer.serialize_map(Some(2))?;
                 map.serialize_entry("name", "timestamp")?;
                 map.serialize_entry("unit", "SECOND")?;
-                map.end()
-            }
-            Self::IpAddr => {
-                let mut map = serializer.serialize_map(Some(3))?;
-                map.serialize_entry("name", "ipv4")?;
-                map.serialize_entry("bitWidth", &32)?;
-                map.serialize_entry("isSigned", &false)?;
                 map.end()
             }
             Self::UInt32 => {
@@ -225,12 +216,6 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&schema).unwrap(),
             r#"{"fields":[{"type":{"name":"timestamp","unit":"SECOND"}}],"metadata":{}}"#
-        );
-
-        let schema = Schema::new(vec![Field::new(DataType::IpAddr)]);
-        assert_eq!(
-            serde_json::to_string(&schema).unwrap(),
-            r#"{"fields":[{"type":{"name":"ipv4","bitWidth":32,"isSigned":false}}],"metadata":{}}"#
         );
 
         let schema = Schema::new(vec![Field::new(DataType::UInt32)]);
