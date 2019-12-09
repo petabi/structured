@@ -4,7 +4,6 @@ use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use csv::{ByteRecord, ByteRecordIter};
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
-use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
@@ -40,17 +39,10 @@ pub fn records_to_columns(
                     col
                 }))
             }
-            FieldParser::UInt32 => {
-                Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                    let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                    col.push(val.parse::<u32>().unwrap_or_default());
-                    col
-                }))
-            }
-            FieldParser::IpAddr(parse) => {
+            FieldParser::UInt32(parse) => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let v = v.next().unwrap();
-                    col.push(parse(v).unwrap_or_else(|_| Ipv4Addr::new(255, 255, 255, 255).into()));
+                    col.push(parse(v).unwrap_or_default());
                     col
                 }))
             }
@@ -98,6 +90,7 @@ mod tests {
     use super::*;
     use itertools::izip;
     use std::collections::HashMap;
+    use std::net::Ipv4Addr;
 
     pub fn convert_to_conc_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
@@ -178,9 +171,9 @@ mod tests {
         let parsers = [
             FieldParser::Int64,
             FieldParser::Utf8,
-            FieldParser::new_ipaddr(|v| {
+            FieldParser::uint32_with_parser(|v| {
                 let val: String = v.iter().map(|&c| c as char).collect();
-                val.parse::<Ipv4Addr>().map(Into::into)
+                val.parse::<Ipv4Addr>().map(Into::into).map_err(Into::into)
             }),
             FieldParser::Float64,
             FieldParser::new_datetime(move |v| {
