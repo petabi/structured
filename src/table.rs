@@ -829,6 +829,24 @@ mod tests {
     use std::convert::TryFrom;
     use std::net::Ipv4Addr;
 
+    #[test]
+    fn debug_column() {
+        let col = Column::with_data(vec![64_i64]);
+        assert_eq!(format!("{:?}", col), "[64]");
+
+        let col = Column::with_data(vec![32_u32]);
+        assert_eq!(format!("{:?}", col), "[32]");
+
+        let col = Column::with_data(vec![64_f64]);
+        assert_eq!(format!("{:?}", col), "[64.0]");
+
+        let col = Column::with_data(vec!["string".to_string()]);
+        assert_eq!(format!("{:?}", col), r#"["string"]"#);
+
+        let col = Column::with_data(vec![NaiveDateTime::from_timestamp(999, 0)]);
+        assert_eq!(format!("{:?}", col), "[1970-01-01T00:16:39]");
+    }
+
     fn reverse_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
     ) -> Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>> {
