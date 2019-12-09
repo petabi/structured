@@ -304,7 +304,6 @@ macro_rules! describe_top_n {
     };
 }
 
-#[derive(Debug)]
 pub struct Column {
     inner: Box<dyn Any + Send + Sync>,
 }
@@ -552,6 +551,29 @@ impl Clone for Column {
             Self {
                 inner: Box::new(cd.clone()),
             }
+        } else {
+            panic!("invalid column type")
+        }
+    }
+}
+
+impl fmt::Debug for Column {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.inner.is::<ColumnData<i64>>() {
+            let cd: &ColumnData<i64> = self.values().unwrap();
+            write!(f, "{:?}", cd)
+        } else if self.inner.is::<ColumnData<u32>>() {
+            let cd: &ColumnData<u32> = self.values().unwrap();
+            write!(f, "{:?}", cd)
+        } else if self.inner.is::<ColumnData<f64>>() {
+            let cd: &ColumnData<f64> = self.values().unwrap();
+            write!(f, "{:?}", cd)
+        } else if self.inner.is::<ColumnData<String>>() {
+            let cd: &ColumnData<String> = self.values().unwrap();
+            write!(f, "{:?}", cd)
+        } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
+            let cd: &ColumnData<NaiveDateTime> = self.values().unwrap();
+            write!(f, "{:?}", cd)
         } else {
             panic!("invalid column type")
         }
