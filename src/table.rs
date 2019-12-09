@@ -304,7 +304,6 @@ macro_rules! describe_top_n {
     };
 }
 
-#[derive(Debug)]
 pub struct Column {
     inner: Box<dyn Any + Send + Sync>,
 }
@@ -552,6 +551,29 @@ impl Clone for Column {
             Self {
                 inner: Box::new(cd.clone()),
             }
+        } else {
+            panic!("invalid column type")
+        }
+    }
+}
+
+impl fmt::Debug for Column {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.inner.is::<ColumnData<i64>>() {
+            let cd: &ColumnData<i64> = self.values().unwrap();
+            write!(f, "{:?}", cd)
+        } else if self.inner.is::<ColumnData<u32>>() {
+            let cd: &ColumnData<u32> = self.values().unwrap();
+            write!(f, "{:?}", cd)
+        } else if self.inner.is::<ColumnData<f64>>() {
+            let cd: &ColumnData<f64> = self.values().unwrap();
+            write!(f, "{:?}", cd)
+        } else if self.inner.is::<ColumnData<String>>() {
+            let cd: &ColumnData<String> = self.values().unwrap();
+            write!(f, "{:?}", cd)
+        } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
+            let cd: &ColumnData<NaiveDateTime> = self.values().unwrap();
+            write!(f, "{:?}", cd)
         } else {
             panic!("invalid column type")
         }
@@ -806,6 +828,24 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
     use std::convert::TryFrom;
     use std::net::Ipv4Addr;
+
+    #[test]
+    fn debug_column() {
+        let col = Column::with_data(vec![64_i64]);
+        assert_eq!(format!("{:?}", col), "[64]");
+
+        let col = Column::with_data(vec![32_u32]);
+        assert_eq!(format!("{:?}", col), "[32]");
+
+        let col = Column::with_data(vec![64_f64]);
+        assert_eq!(format!("{:?}", col), "[64.0]");
+
+        let col = Column::with_data(vec!["string".to_string()]);
+        assert_eq!(format!("{:?}", col), r#"["string"]"#);
+
+        let col = Column::with_data(vec![NaiveDateTime::from_timestamp(999, 0)]);
+        assert_eq!(format!("{:?}", col), "[1970-01-01T00:16:39]");
+    }
 
     fn reverse_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
