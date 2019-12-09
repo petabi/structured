@@ -37,11 +37,10 @@ impl Table {
             .fields()
             .iter()
             .map(|field| match field.data_type() {
-                DataType::Int64 => Column::new::<i64>(),
+                DataType::Int64 | DataType::Timestamp(_) => Column::new::<i64>(),
                 DataType::Float64 => Column::new::<f64>(),
                 DataType::Utf8 => Column::new::<String>(),
                 DataType::UInt32 => Column::new::<u32>(),
-                DataType::DateTime => Column::new::<NaiveDateTime>(),
             })
             .collect();
         Self {
@@ -135,8 +134,8 @@ impl Table {
                     };
                 }
                 ColumnOfOneRow::DateTime(v) => {
-                    if let Some(c) = col.values_mut::<NaiveDateTime>() {
-                        c.push(v)
+                    if let Some(c) = col.values_mut::<i64>() {
+                        c.push(v.timestamp())
                     };
                 }
                 _ => unreachable!(), // by implementation

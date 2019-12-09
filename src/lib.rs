@@ -8,6 +8,6 @@ mod parse;
 mod table;
 pub(crate) mod util;
 
-pub use datatypes::{DataType, Field, Schema};
+pub use datatypes::{DataType, Field, Schema, TimeUnit};
 pub use parse::records_to_columns;
 pub use table::{Column, Description, DescriptionElement, Table};

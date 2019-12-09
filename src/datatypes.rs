@@ -9,13 +9,13 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Supported types.
-#[derive(Clone, Debug, PartialEq, Copy)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
     Int64,
     UInt32,
     Float64,
-    DateTime,
     Utf8,
+    Timestamp(TimeUnit),
 }
 
 struct DataTypeVisitor;
@@ -59,7 +59,7 @@ impl<'de> Visitor<'de> for DataTypeVisitor {
                 Some(false) => Ok(DataType::UInt32),
                 None => Err(A::Error::custom("isSigned missing or invalid")),
             },
-            Some("timestamp") => Ok(DataType::DateTime),
+            Some("timestamp") => Ok(DataType::Timestamp(TimeUnit::Second)),
             Some(name) => Err(A::Error::custom(format!("unknown type name: {}", name))),
             None => Err(A::Error::custom("no type name")),
         }
@@ -99,7 +99,7 @@ impl Serialize for DataType {
                 map.serialize_entry("name", "utf8")?;
                 map.end()
             }
-            Self::DateTime => {
+            Self::Timestamp(_) => {
                 let mut map = serializer.serialize_map(Some(2))?;
                 map.serialize_entry("name", "timestamp")?;
                 map.serialize_entry("unit", "SECOND")?;
@@ -116,7 +116,12 @@ impl Serialize for DataType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum TimeUnit {
+    Second,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Field {
     #[serde(rename = "type")]
     data_type: DataType,
@@ -212,7 +217,7 @@ mod tests {
             r#"{"fields":[{"type":{"name":"floatingpoint","precision":"DOUBLE"}}],"metadata":{}}"#
         );
 
-        let schema = Schema::new(vec![Field::new(DataType::DateTime)]);
+        let schema = Schema::new(vec![Field::new(DataType::Timestamp(TimeUnit::Second))]);
         assert_eq!(
             serde_json::to_string(&schema).unwrap(),
             r#"{"fields":[{"type":{"name":"timestamp","unit":"SECOND"}}],"metadata":{}}"#
