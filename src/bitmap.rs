@@ -18,11 +18,12 @@ impl Bitmap {
         };
         let mut v = Vec::with_capacity(len);
         for _ in 0..len {
-            v.push(255); // 1 is not null
+            v.push(255); // 1 means not null.
         }
-        Self {
-            bits: Buffer::from(&v[..]),
-        }
+        debug_assert!(v.len() <= usize::max_value() / 8 + 1);
+        // The following is safe because the assertion above holds.
+        let bits = unsafe { Buffer::from_small_slice(&v[..]) };
+        Self { bits }
     }
 
     pub fn len(&self) -> usize {
