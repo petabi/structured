@@ -10,4 +10,4 @@ pub(crate) mod util;
 
 pub use datatypes::{DataType, Field, Schema, TimeUnit};
 pub use parse::records_to_columns;
-pub use table::{Column, Description, DescriptionElement, Table};
+pub use table::{Column, ColumnType, Description, DescriptionElement, Table};

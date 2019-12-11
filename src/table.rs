@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt;
 use std::hash::Hash;
+use std::net::{IpAddr, Ipv4Addr};
 use std::slice::Iter;
 use std::sync::Arc;
 
@@ -20,6 +21,16 @@ const NUM_OF_TOP_N: usize = 30;
 type ColumnOfOneRow = DescriptionElement;
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
+
+#[derive(Clone, Copy, Debug)] // same as remake::csv::ColumnType
+pub enum ColumnType {
+    Int64,
+    Float64,
+    DateTime,
+    IpAddr,
+    Enum,
+    Utf8,
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct Table {
@@ -88,15 +99,20 @@ impl Table {
         }
     }
 
-    pub fn describe(&self, r_enum_maps: &ReverseEnumMaps) -> Vec<Description> {
+    pub fn describe(
+        &self,
+        column_types: &Arc<Vec<ColumnType>>,
+        r_enum_maps: &ReverseEnumMaps,
+    ) -> Vec<Description> {
         self.columns
             .iter()
             .enumerate()
             .map(|(index, column)| {
-                if let Some(m) = r_enum_maps.get(&index) {
-                    column.describe_enum(m)
+                if let ColumnType::Enum = column_types[index] {
+                    column
+                        .describe_enum(r_enum_maps.get(&index).unwrap_or(&Arc::new(HashMap::new())))
                 } else {
-                    column.describe()
+                    column.describe(column_types[index])
                 }
             })
             .collect()
@@ -371,7 +387,7 @@ impl Column {
     }
 
     pub fn describe_enum(&self, reverse_map: &Arc<HashMap<u32, Vec<String>>>) -> Description {
-        let desc = self.describe();
+        let desc = self.describe(ColumnType::Enum);
 
         let (top_n, mode) = {
             if reverse_map.is_empty() {
@@ -474,51 +490,64 @@ impl Column {
         }
     }
 
-    pub fn describe(&self) -> Description {
+    pub fn describe(&self, column_type: ColumnType) -> Description {
         let mut desc = Description::default();
 
-        if self.inner.is::<ColumnData<i64>>() {
-            let cd: &ColumnData<i64> = self.values().unwrap();
-            describe_all!(cd, desc, i64, DescriptionElement::Int);
-        } else if self.inner.is::<ColumnData<f64>>() {
-            let cd: &ColumnData<f64> = self.values().unwrap();
-            describe_min_max!(cd, desc, DescriptionElement::Float);
-            let min = if let Some(DescriptionElement::Float(f)) = desc.get_min() {
-                f
-            } else {
-                unreachable!() // by implementation
-            };
-            let max = if let Some(DescriptionElement::Float(f)) = desc.get_max() {
-                f
-            } else {
-                unreachable!() // by implementation
-            };
-            let (rc, rt) = describe_top_n_f64(cd, *min, *max);
-            desc.count = cd.len();
-            desc.unique_count = rc;
-            desc.mode = Some(rt[0].0.clone());
-            desc.top_n = Some(rt);
+        match column_type {
+            ColumnType::Int64 => {
+                let cd: &ColumnData<i64> = self.values().unwrap();
+                describe_all!(cd, desc, i64, DescriptionElement::Int);
+            }
+            ColumnType::Float64 => {
+                let cd: &ColumnData<f64> = self.values().unwrap();
+                describe_min_max!(cd, desc, DescriptionElement::Float);
+                let min = if let Some(DescriptionElement::Float(f)) = desc.get_min() {
+                    f
+                } else {
+                    unreachable!() // by implementation
+                };
+                let max = if let Some(DescriptionElement::Float(f)) = desc.get_max() {
+                    f
+                } else {
+                    unreachable!() // by implementation
+                };
+                let (rc, rt) = describe_top_n_f64(cd, *min, *max);
+                desc.count = cd.len();
+                desc.unique_count = rc;
+                desc.mode = Some(rt[0].0.clone());
+                desc.top_n = Some(rt);
 
-            describe_mean_deviation!(cd, desc);
-        } else if self.inner.is::<ColumnData<u32>>() {
-            let cd: &ColumnData<u32> = self.values().unwrap();
-            describe_top_n!(cd, desc, DescriptionElement::UInt);
-        } else if self.inner.is::<ColumnData<String>>() {
-            let cd: &ColumnData<String> = self.values().unwrap();
-            describe_top_n!(cd, desc, DescriptionElement::Text);
-        } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
-            let cd: &ColumnData<NaiveDateTime> = self.values().unwrap();
-
-            let cd_onlytime: ColumnData<NaiveDateTime> = cd
-                .iter()
-                .map(|dt| {
-                    NaiveDateTime::new(dt.date(), NaiveTime::from_hms(dt.time().hour(), 0, 0))
-                })
-                .collect();
-            describe_top_n!(&cd_onlytime, desc, DescriptionElement::DateTime);
-        } else {
-            panic!("invalid column type");
+                describe_mean_deviation!(cd, desc);
+            }
+            ColumnType::Enum => {
+                let cd: &ColumnData<u32> = self.values().unwrap();
+                describe_top_n!(cd, desc, DescriptionElement::UInt);
+            }
+            ColumnType::Utf8 => {
+                let cd: &ColumnData<String> = self.values().unwrap();
+                describe_top_n!(cd, desc, DescriptionElement::Text);
+            }
+            ColumnType::IpAddr => {
+                let cd: &ColumnData<u32> = self.values().unwrap();
+                let cd_ipaddr: ColumnData<IpAddr> = cd
+                    .iter()
+                    .map(|ip| IpAddr::from(Ipv4Addr::from(*ip)))
+                    .collect();
+                describe_top_n!(&cd_ipaddr, desc, DescriptionElement::IpAddr);
+            }
+            ColumnType::DateTime => {
+                let cd: &ColumnData<i64> = self.values().unwrap();
+                let cd_only_date_hour: ColumnData<NaiveDateTime> = cd
+                    .iter()
+                    .map(|dt| {
+                        let dt = NaiveDateTime::from_timestamp(*dt, 0);
+                        NaiveDateTime::new(dt.date(), NaiveTime::from_hms(dt.time().hour(), 0, 0))
+                    })
+                    .collect();
+                describe_top_n!(&cd_only_date_hour, desc, DescriptionElement::DateTime);
+            }
         }
+
         desc
     }
 }
@@ -630,11 +659,12 @@ impl PartialEq for Column {
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum DescriptionElement {
     Int(i64),
-    UInt(u32),    // only internal use because raw data stored as u32
+    UInt(u32),
     Enum(String), // describe() converts UInt -> Enum using enum maps. Without maps, by to_string().
     Float(f64),
     FloatRange(f64, f64),
     Text(String),
+    IpAddr(IpAddr),
     DateTime(NaiveDateTime),
 }
 
@@ -646,6 +676,7 @@ impl fmt::Display for DescriptionElement {
             Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
             Self::Float(x) => write!(f, "{}", x),
             Self::FloatRange(x, y) => write!(f, "({} - {})", x, y),
+            Self::IpAddr(x) => write!(f, "{}", x),
             Self::DateTime(x) => write!(f, "{}", x),
         }
     }
@@ -688,6 +719,20 @@ impl fmt::Display for Description {
             writeln!(f, "   mode: {}", self.get_mode().unwrap())?;
         }
         writeln!(f, "End of Description")
+    }
+}
+
+impl fmt::Display for ColumnType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let display = match self {
+            Self::Int64 => "Int64",
+            Self::Float64 => "Float64",
+            Self::Enum => "Enum",
+            Self::Utf8 => "Utf8",
+            Self::IpAddr => "IpAddr",
+            Self::DateTime => "DateTime",
+        };
+        writeln!(f, "ColumnType::{}", display)
     }
 }
 
@@ -895,14 +940,28 @@ mod tests {
             Ipv4Addr::new(127, 0, 0, 3).into(),
         ];
         let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
-        let c4_v: Vec<NaiveDateTime> = vec![
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 15, 11),
-            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 45, 11),
-            NaiveDate::from_ymd(2019, 9, 21).and_hms(8, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
+        let c4_v: Vec<i64> = vec![
+            NaiveDate::from_ymd(2019, 9, 22)
+                .and_hms(6, 10, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 22)
+                .and_hms(6, 15, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 21)
+                .and_hms(20, 10, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 21)
+                .and_hms(20, 10, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 22)
+                .and_hms(6, 45, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 21)
+                .and_hms(8, 10, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 22)
+                .and_hms(9, 10, 11)
+                .timestamp(),
         ];
         let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
 
@@ -916,7 +975,15 @@ mod tests {
         let table_org = Table::try_from(c_v).expect("invalid columns");
         let table = table_org.clone();
         move_table_add_row(table_org);
-        let ds = table.describe(&reverse_enum_maps(&HashMap::new()));
+        let column_types = Arc::new(vec![
+            ColumnType::Int64,
+            ColumnType::Utf8,
+            ColumnType::IpAddr,
+            ColumnType::Float64,
+            ColumnType::DateTime,
+            ColumnType::Enum,
+        ]);
+        let ds = table.describe(&column_types, &reverse_enum_maps(&HashMap::new()));
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -924,7 +991,7 @@ mod tests {
             *ds[1].get_mode().unwrap()
         );
         assert_eq!(
-            DescriptionElement::UInt(Ipv4Addr::new(127, 0, 0, 3).into()),
+            DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
             ds[2].get_top_n().unwrap()[1].0
         );
         assert_eq!(3, ds[3].unique_count);
@@ -940,7 +1007,7 @@ mod tests {
         c5_map.insert(7, "t3".to_string());
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
-        let ds = table.describe(&reverse_enum_maps(&labels));
+        let ds = table.describe(&column_types, &reverse_enum_maps(&labels));
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -948,7 +1015,7 @@ mod tests {
             *ds[1].get_mode().unwrap()
         );
         assert_eq!(
-            DescriptionElement::UInt(Ipv4Addr::new(127, 0, 0, 3).into()),
+            DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
             ds[2].get_top_n().unwrap()[1].0
         );
         assert_eq!(3, ds[3].unique_count);
@@ -974,7 +1041,15 @@ mod tests {
         table
             .push_one_row(one_row, 1)
             .expect("Failure in adding a row");
-        let ds = table.describe(&reverse_enum_maps(&HashMap::new()));
+        let column_types = Arc::new(vec![
+            ColumnType::Int64,
+            ColumnType::Utf8,
+            ColumnType::IpAddr,
+            ColumnType::Float64,
+            ColumnType::DateTime,
+            ColumnType::Enum,
+        ]);
+        let ds = table.describe(&column_types, &reverse_enum_maps(&HashMap::new()));
         assert_eq!(DescriptionElement::Int(3), ds[0].get_top_n().unwrap()[0].0);
         assert_eq!(4, ds[0].get_top_n().unwrap()[0].1);
     }
