@@ -1,4 +1,4 @@
-use crate::buffer::Buffer;
+use crate::memory::Buffer;
 use crate::util::bit_util;
 
 #[derive(PartialEq, Debug, Clone)]

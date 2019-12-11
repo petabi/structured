@@ -1,6 +1,6 @@
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::DataType;
+use crate::memory::Buffer;
 use std::sync::Arc;
 
 /// An generic representation of Arrow array data which encapsulates common attributes and
