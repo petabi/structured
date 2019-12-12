@@ -12,6 +12,7 @@ use std::str::FromStr;
 /// Supported types.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
+    Int32,
     Int64,
     UInt8,
     UInt32,
@@ -57,8 +58,18 @@ impl<'de> Visitor<'de> for DataTypeVisitor {
             Some("utf8") => Ok(DataType::Utf8),
             Some("floatingpoint") => Ok(DataType::Float64),
             Some("int") => match props.is_signed {
-                Some(true) => Ok(DataType::Int64),
-                Some(false) => Ok(DataType::UInt32),
+                Some(true) => match props.bit_width {
+                    Some(32) => Ok(DataType::Int32),
+                    Some(64) => Ok(DataType::Int64),
+                    Some(_) => Err(A::Error::custom("bit_width not supported")),
+                    None => Err(A::Error::custom("bit_width missing or invalid")),
+                },
+                Some(false) => match props.bit_width {
+                    Some(32) => Ok(DataType::UInt32),
+                    Some(8) => Ok(DataType::UInt8),
+                    Some(_) => Err(A::Error::custom("bit_width not supported")),
+                    None => Err(A::Error::custom("bit_width missing or invalid")),
+                },
                 None => Err(A::Error::custom("isSigned missing or invalid")),
             },
             Some("timestamp") => Ok(DataType::Timestamp(TimeUnit::Second)),
@@ -83,10 +94,11 @@ impl Serialize for DataType {
         S: Serializer,
     {
         match self {
-            Self::Float64 => {
-                let mut map = serializer.serialize_map(Some(2))?;
-                map.serialize_entry("name", "floatingpoint")?;
-                map.serialize_entry("precision", "DOUBLE")?;
+            Self::Int32 => {
+                let mut map = serializer.serialize_map(Some(3))?;
+                map.serialize_entry("name", "int")?;
+                map.serialize_entry("bitWidth", &32)?;
+                map.serialize_entry("isSigned", &true)?;
                 map.end()
             }
             Self::Int64 => {
@@ -108,6 +120,12 @@ impl Serialize for DataType {
                 map.serialize_entry("name", "int")?;
                 map.serialize_entry("bitWidth", &32)?;
                 map.serialize_entry("isSigned", &false)?;
+                map.end()
+            }
+            Self::Float64 => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("name", "floatingpoint")?;
+                map.serialize_entry("precision", "DOUBLE")?;
                 map.end()
             }
             Self::Utf8 => {
@@ -138,6 +156,7 @@ pub struct Field {
 
 pub trait NativeType: fmt::Debug + Send + Sync + Copy + PartialOrd + FromStr + 'static {}
 
+impl NativeType for i32 {}
 impl NativeType for i64 {}
 impl NativeType for u8 {}
 impl NativeType for u32 {}
@@ -200,6 +219,7 @@ macro_rules! make_primitive_type {
     };
 }
 
+make_primitive_type!(Int32Type, i32, DataType::Int32, 32, 0_i32);
 make_primitive_type!(Int64Type, i64, DataType::Int64, 64, 0_i64);
 make_primitive_type!(UInt8Type, u8, DataType::UInt8, 8, 0_u8);
 make_primitive_type!(UInt32Type, u32, DataType::UInt32, 32, 0_u32);

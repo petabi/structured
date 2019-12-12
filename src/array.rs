@@ -1,8 +1,8 @@
-mod list;
 mod primitive;
+mod string;
 
-pub use list::StringArray;
 pub use primitive::Array as PrimitiveArray;
+pub use string::Array as StringArray;
 
 use crate::datatypes::DataType;
 use crate::memory::Buffer;
@@ -10,20 +10,27 @@ use std::fmt;
 use std::sync::Arc;
 
 /// A dynamically-typed array.
-pub trait Array: fmt::Debug {}
+pub trait Array: fmt::Debug {
+    /// Returns the number of elements of this array.
+    fn len(&self) -> usize;
+}
+
+/// An `Array` builder.
+pub trait Builder {
+    /// Returns the number of array slots in the builder.
+    fn len(&self) -> usize;
+    /// Converts inself into an `Array`.
+    fn build(self) -> Arc<dyn Array>;
+}
 
 /// A generic representation of array data.
 #[derive(PartialEq, Debug, Clone)]
-struct DataRepr {
-    /// The data type for this array data
+struct Data {
+    /// The element type for this array data.
     data_type: DataType,
-    /// The number of elements in this array data
-    pub(crate) len: usize,
-    /// The buffers for this array data.
+    /// The number of elements in this array data.
+    len: usize,
     buffers: Vec<Buffer>,
-    /// The children of this array. Non-empty for nested types (`ListArray`)
-    /// only.
-    children: Vec<Arc<DataRepr>>,
 }
 
 struct RawPtrBox<T> {

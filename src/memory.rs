@@ -6,7 +6,7 @@ use std::fmt::{Debug, Formatter};
 use std::io::{self, Write};
 use std::marker::PhantomData;
 use std::mem;
-use std::ptr::{self, copy_nonoverlapping};
+use std::ptr::{self, copy_nonoverlapping, NonNull};
 use std::slice;
 use std::sync::Arc;
 use thiserror::Error;
@@ -29,23 +29,19 @@ impl Buffer {
     ///
     /// # Safety
     ///
-    /// The size of the slice should not overflow when aligned on a 64-byte
-    /// boundary, i.e., `vec.len() <= usize::max_value() - 63`.
+    /// The size of the slice should not overflow when aligned on a
+    /// 64-byte boundary, i.e., `vec.len() <= usize::max_value() - 63`.
     pub(crate) unsafe fn from_small_slice(vec: &[u8]) -> Self {
-        let len = vec.len() * mem::size_of::<u8>();
-        let capacity = bit_util::round_upto_multiple_of_64(len);
+        debug_assert!(vec.len() <= usize::max_value() - 63);
+        let capacity = bit_util::round_upto_multiple_of_64(vec.len());
         let data = if capacity == 0 {
             ptr::null()
         } else {
             let data = alloc(Layout::from_size_align_unchecked(capacity, ALIGNMENT));
-            copy_nonoverlapping(vec.as_ptr(), data, len);
+            copy_nonoverlapping(vec.as_ptr(), data, vec.len());
             data
         };
-        let buf_data = BufferData {
-            ptr: data,
-            len,
-            owned: true,
-        };
+        let buf_data = BufferData::new(data, vec.len(), true);
         Self {
             data: Arc::new(buf_data),
             offset: 0,
@@ -54,7 +50,7 @@ impl Buffer {
 
     /// Returns the number of bytes in the buffer.
     pub fn len(&self) -> usize {
-        self.data.len - self.offset
+        self.data.len() - self.offset
     }
 
     #[allow(dead_code)]
@@ -64,7 +60,7 @@ impl Buffer {
 
     /// Returns the raw pointer to the beginning of this buffer.
     pub fn raw_data(&self) -> *const u8 {
-        unsafe { self.data.ptr.add(self.offset) }
+        unsafe { self.data.ptr().add(self.offset) }
     }
 
     /// Returns a typed slice.
@@ -83,15 +79,39 @@ impl Buffer {
 }
 
 struct BufferData {
-    ptr: *const u8, // Must be 64-byte aligned.
+    ptr: *const u8, // Must be non-null and 64-byte aligned.
     len: usize,
     owned: bool,
 }
 
-/// Release the underlying memory when the current buffer goes out of scope
+impl BufferData {
+    /// Creates a new `BufferData`.
+    ///
+    /// # Safety
+    ///
+    /// The `Drop` implementation for `BufferData` requries that `ptr` must be
+    /// non-null and aligned on a 64-byte boundary, and that `len` is the number
+    /// of bytes allocated for the memory at `ptr`. If `owned` is `true`, the
+    /// memory at `ptr` must be deallocated by this `BufferData`'s
+    /// implementation only.
+    unsafe fn new(ptr: *const u8, len: usize, owned: bool) -> Self {
+        debug_assert!(!ptr.is_null());
+        Self { ptr, len, owned }
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn ptr(&self) -> *const u8 {
+        self.ptr
+    }
+}
+
 impl Drop for BufferData {
+    /// Releases the underlying memory.
     fn drop(&mut self) {
-        if !self.ptr.is_null() && self.owned {
+        if self.owned {
             unsafe {
                 dealloc(
                     self.ptr as *mut u8,
@@ -135,7 +155,7 @@ unsafe impl Sync for Buffer {}
 /// A contiguous, mutable, and growable memory region.
 #[derive(Debug)]
 pub struct BufferMut {
-    data: *mut u8,
+    data: NonNull<u8>,
     len: usize,
     capacity: usize,
 }
@@ -147,19 +167,21 @@ impl BufferMut {
         }
         let capacity = bit_util::round_upto_multiple_of_64(capacity);
         debug_assert!(capacity <= usize::max_value() - 63);
-        let ptr = unsafe { alloc(Layout::from_size_align_unchecked(capacity, ALIGNMENT)) };
-        if ptr.is_null() {
-            return Err(AllocationError::Other);
-        }
+        let data = unsafe {
+            let ptr = alloc(Layout::from_size_align_unchecked(capacity, ALIGNMENT));
+            if ptr.is_null() {
+                return Err(AllocationError::Other);
+            }
+            NonNull::new_unchecked(ptr)
+        };
         Ok(Self {
-            data: ptr,
+            data,
             len: 0,
             capacity,
         })
     }
 
     /// Returns the total capacity of this buffer.
-    #[allow(dead_code)]
     pub fn capacity(&self) -> usize {
         self.capacity
     }
@@ -171,7 +193,6 @@ impl BufferMut {
     }
 
     /// Returns the number of bytes written in this buffer.
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.len
     }
@@ -189,9 +210,8 @@ impl BufferMut {
     }
 
     /// Returns the raw pointer to the beginning of this buffer.
-    #[allow(dead_code)]
     pub fn raw_data(&self) -> *const u8 {
-        self.data
+        self.data.as_ptr()
     }
 
     #[allow(dead_code)]
@@ -214,21 +234,17 @@ impl BufferMut {
             cmp::max(capacity, self.capacity * 2)
         };
         debug_assert!(0 < capacity && capacity <= usize::max_value() - 63);
-        let data = unsafe {
-            if self.data.is_null() {
-                alloc(Layout::from_size_align_unchecked(capacity, ALIGNMENT))
-            } else {
-                realloc(
-                    self.data,
-                    Layout::from_size_align_unchecked(self.capacity, ALIGNMENT),
-                    capacity,
-                )
+        self.data = unsafe {
+            let ptr = realloc(
+                self.data.as_ptr(),
+                Layout::from_size_align_unchecked(self.capacity, ALIGNMENT),
+                capacity,
+            );
+            if ptr.is_null() {
+                return Err(AllocationError::Other);
             }
+            NonNull::new_unchecked(ptr)
         };
-        if data.is_null() {
-            return Err(AllocationError::Other);
-        }
-        self.data = data as *mut u8;
         self.capacity = capacity;
         Ok(())
     }
@@ -236,13 +252,11 @@ impl BufferMut {
 
 impl Drop for BufferMut {
     fn drop(&mut self) {
-        if !self.data.is_null() {
-            unsafe {
-                dealloc(
-                    self.data as *mut u8,
-                    Layout::from_size_align_unchecked(self.capacity, ALIGNMENT),
-                );
-            }
+        unsafe {
+            dealloc(
+                self.data.as_ptr(),
+                Layout::from_size_align_unchecked(self.capacity, ALIGNMENT),
+            );
         }
     }
 }
@@ -260,11 +274,12 @@ impl Write for BufferMut {
         let dst = if self.len > isize::max_value() as usize {
             unsafe {
                 self.data
+                    .as_ptr()
                     .offset(isize::max_value())
                     .add(self.len - isize::max_value() as usize)
             }
         } else {
-            unsafe { self.data.add(self.len) }
+            unsafe { self.data.as_ptr().add(self.len) }
         };
         unsafe {
             copy_nonoverlapping(buf.as_ptr(), dst, buf.len());
@@ -281,7 +296,7 @@ impl Write for BufferMut {
 impl Into<Buffer> for BufferMut {
     fn into(self) -> Buffer {
         let buffer_data = BufferData {
-            ptr: self.data,
+            ptr: self.raw_data(),
             len: self.len,
             owned: true,
         };
@@ -315,6 +330,10 @@ where
     [T::Native]: RawBytes,
     T: PrimitiveType,
 {
+    pub fn new() -> Result<Self, AllocationError> {
+        Self::with_capacity(ALIGNMENT)
+    }
+
     pub fn with_capacity(capacity: usize) -> Result<Self, AllocationError> {
         let buffer = BufferMut::with_capacity(capacity * mem::size_of::<T::Native>())?;
         Ok(Self {
@@ -324,7 +343,11 @@ where
         })
     }
 
-    fn try_reserve(&mut self, additional: usize) -> Result<(), AllocationError> {
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), AllocationError> {
         if usize::max_value() / mem::size_of::<T::Native>() < additional {
             return Err(AllocationError::TooLarge);
         }
@@ -333,32 +356,27 @@ where
         Ok(())
     }
 
-    pub fn try_push(&mut self, v: T::Native) -> Result<(), Error> {
+    pub fn try_push(&mut self, v: T::Native) -> Result<(), AllocationError> {
         self.try_reserve(1)?;
-        self.buffer.write_all(v.as_raw_bytes())?;
+        self.buffer
+            .write_all(v.as_raw_bytes())
+            .expect("should have enough space reserved");
         self.len += 1;
         Ok(())
     }
 
-    pub fn extend_from_slice(&mut self, slice: &[T::Native]) -> Result<(), Error> {
+    pub fn extend_from_slice(&mut self, slice: &[T::Native]) -> Result<(), AllocationError> {
         self.try_reserve(slice.len())?;
-        self.buffer.write_all(slice.as_raw_bytes())?;
+        self.buffer
+            .write_all(slice.as_raw_bytes())
+            .expect("should have enough space reserved");
         self.len += slice.len();
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn build(self) -> Buffer {
         self.buffer.into()
     }
-}
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("not enough space in buffer: {0}")]
-    BufferError(#[from] io::Error),
-    #[error("memory error: {0}")]
-    MemoryError(#[from] AllocationError),
 }
 
 #[cfg(test)]
@@ -453,6 +471,7 @@ mod tests {
 
     #[test]
     fn buffer_builder_extend_from_slice() {
+        check_as_typed_data!(&[1_i32, 3_i32, 6_i32], datatypes::Int32Type);
         check_as_typed_data!(&[1_i64, 3_i64, 6_i64], datatypes::Int64Type);
         check_as_typed_data!(&[1_u8, 3_u8, 6_u8], datatypes::UInt8Type);
         check_as_typed_data!(&[1_u32, 3_u32, 6_u32], datatypes::UInt32Type);
