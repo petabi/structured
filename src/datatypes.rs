@@ -3,15 +3,17 @@ use serde::{
     ser::SerializeMap,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
+use std::mem;
+use std::slice;
 use std::str::FromStr;
 
 /// Supported types.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
     Int64,
+    UInt8,
     UInt32,
     Float64,
     Utf8,
@@ -94,6 +96,20 @@ impl Serialize for DataType {
                 map.serialize_entry("isSigned", &true)?;
                 map.end()
             }
+            Self::UInt8 => {
+                let mut map = serializer.serialize_map(Some(3))?;
+                map.serialize_entry("name", "int")?;
+                map.serialize_entry("bitWidth", &8)?;
+                map.serialize_entry("isSigned", &false)?;
+                map.end()
+            }
+            Self::UInt32 => {
+                let mut map = serializer.serialize_map(Some(3))?;
+                map.serialize_entry("name", "int")?;
+                map.serialize_entry("bitWidth", &32)?;
+                map.serialize_entry("isSigned", &false)?;
+                map.end()
+            }
             Self::Utf8 => {
                 let mut map = serializer.serialize_map(Some(1))?;
                 map.serialize_entry("name", "utf8")?;
@@ -103,13 +119,6 @@ impl Serialize for DataType {
                 let mut map = serializer.serialize_map(Some(2))?;
                 map.serialize_entry("name", "timestamp")?;
                 map.serialize_entry("unit", "SECOND")?;
-                map.end()
-            }
-            Self::UInt32 => {
-                let mut map = serializer.serialize_map(Some(3))?;
-                map.serialize_entry("name", "int")?;
-                map.serialize_entry("bitWidth", &32)?;
-                map.serialize_entry("isSigned", &false)?;
                 map.end()
             }
         }
@@ -127,10 +136,29 @@ pub struct Field {
     data_type: DataType,
 }
 
-pub trait NativeType:
-    fmt::Debug + Send + Sync + Copy + PartialOrd + FromStr + AsRef<[u8]> + 'static
-{
-    fn into_json_value(self) -> Option<Value>;
+pub trait NativeType: fmt::Debug + Send + Sync + Copy + PartialOrd + FromStr + 'static {}
+
+impl NativeType for i64 {}
+impl NativeType for u8 {}
+impl NativeType for u32 {}
+impl NativeType for f64 {}
+
+pub trait RawBytes {
+    fn as_raw_bytes(&self) -> &[u8];
+}
+
+impl<T: NativeType> RawBytes for [T] {
+    fn as_raw_bytes(&self) -> &[u8] {
+        let raw_ptr = self.as_ptr() as *const T as *const u8;
+        unsafe { slice::from_raw_parts(raw_ptr, self.len() * mem::size_of::<T>()) }
+    }
+}
+
+impl<T: NativeType> RawBytes for T {
+    fn as_raw_bytes(&self) -> &[u8] {
+        let raw_ptr = self as *const Self as *const u8;
+        unsafe { slice::from_raw_parts(raw_ptr, mem::size_of::<Self>()) }
+    }
 }
 
 /// Trait indicating a primitive fixed-width type (bool, ints and floats).
@@ -149,6 +177,40 @@ pub trait PrimitiveType: 'static {
     /// This is useful for aggregate array ops like `sum()`, `mean()`.
     fn default_value() -> Self::Native;
 }
+
+macro_rules! make_primitive_type {
+    ($name:ident, $native_ty:ty, $data_ty:expr, $bit_width:expr, $default_val:expr) => {
+        pub struct $name {}
+
+        impl PrimitiveType for $name {
+            type Native = $native_ty;
+
+            fn get_data_type() -> DataType {
+                $data_ty
+            }
+
+            fn get_bit_width() -> usize {
+                $bit_width
+            }
+
+            fn default_value() -> Self::Native {
+                $default_val
+            }
+        }
+    };
+}
+
+make_primitive_type!(Int64Type, i64, DataType::Int64, 64, 0_i64);
+make_primitive_type!(UInt8Type, u8, DataType::UInt8, 8, 0_u8);
+make_primitive_type!(UInt32Type, u32, DataType::UInt32, 32, 0_u32);
+make_primitive_type!(Float64Type, f64, DataType::Float64, 64, 0_f64);
+make_primitive_type!(
+    TimestampSecondType,
+    i64,
+    DataType::Timestamp(TimeUnit::Second),
+    64,
+    0_i64
+);
 
 impl Field {
     pub fn new(data_type: DataType) -> Self {

@@ -1,4 +1,4 @@
-use crate::datatypes::PrimitiveType;
+use crate::datatypes::{NativeType, PrimitiveType, RawBytes};
 use crate::util::bit_util;
 use std::alloc::{alloc, dealloc, realloc, Layout};
 use std::cmp;
@@ -65,6 +65,20 @@ impl Buffer {
     /// Returns the raw pointer to the beginning of this buffer.
     pub fn raw_data(&self) -> *const u8 {
         unsafe { self.data.ptr.add(self.offset) }
+    }
+
+    /// Returns a typed slice.
+    ///
+    /// # Safety
+    ///
+    /// The stored data should be valid values of type `T`.
+    #[allow(dead_code)]
+    pub unsafe fn as_slice<T: NativeType>(&self) -> &[T] {
+        assert_eq!(self.len() % mem::size_of::<T>(), 0);
+        slice::from_raw_parts(
+            self.raw_data() as *const T,
+            self.len() / mem::size_of::<T>(),
+        )
     }
 }
 
@@ -218,20 +232,6 @@ impl BufferMut {
         self.capacity = capacity;
         Ok(())
     }
-
-    #[allow(dead_code)]
-    pub fn build(self) -> Buffer {
-        let buffer_data = BufferData {
-            ptr: self.data,
-            len: self.len,
-            owned: true,
-        };
-        mem::forget(self);
-        Buffer {
-            data: Arc::new(buffer_data),
-            offset: 0,
-        }
-    }
 }
 
 impl Drop for BufferMut {
@@ -278,6 +278,21 @@ impl Write for BufferMut {
     }
 }
 
+impl Into<Buffer> for BufferMut {
+    fn into(self) -> Buffer {
+        let buffer_data = BufferData {
+            ptr: self.data,
+            len: self.len,
+            owned: true,
+        };
+        mem::forget(self);
+        Buffer {
+            data: Arc::new(buffer_data),
+            offset: 0,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum AllocationError {
     #[error("cannot allocate memory larger than usize::max_value() - 63 bytes")]
@@ -297,8 +312,8 @@ pub struct BufferBuilder<T: PrimitiveType> {
 #[allow(dead_code)]
 impl<T> BufferBuilder<T>
 where
+    [T::Native]: RawBytes,
     T: PrimitiveType,
-    [T::Native]: AsRef<[u8]>,
 {
     pub fn with_capacity(capacity: usize) -> Result<Self, AllocationError> {
         let buffer = BufferMut::with_capacity(capacity * mem::size_of::<T::Native>())?;
@@ -309,20 +324,6 @@ where
         })
     }
 
-    pub fn try_push(&mut self, v: T::Native) -> Result<(), Error> {
-        self.try_reserve(1)?;
-        self.buffer.write_all(v.as_ref())?;
-        self.len += 1;
-        Ok(())
-    }
-
-    pub fn extend_from_slice(&mut self, slice: &[T::Native]) -> Result<(), Error> {
-        self.try_reserve(slice.len())?;
-        self.buffer.write_all(slice.as_ref())?;
-        self.len += slice.len();
-        Ok(())
-    }
-
     fn try_reserve(&mut self, additional: usize) -> Result<(), AllocationError> {
         if usize::max_value() / mem::size_of::<T::Native>() < additional {
             return Err(AllocationError::TooLarge);
@@ -330,6 +331,25 @@ where
         self.buffer
             .try_reserve(mem::size_of::<T::Native>() * additional)?;
         Ok(())
+    }
+
+    pub fn try_push(&mut self, v: T::Native) -> Result<(), Error> {
+        self.try_reserve(1)?;
+        self.buffer.write_all(v.as_raw_bytes())?;
+        self.len += 1;
+        Ok(())
+    }
+
+    pub fn extend_from_slice(&mut self, slice: &[T::Native]) -> Result<(), Error> {
+        self.try_reserve(slice.len())?;
+        self.buffer.write_all(slice.as_raw_bytes())?;
+        self.len += slice.len();
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn build(self) -> Buffer {
+        self.buffer.into()
     }
 }
 
@@ -343,7 +363,8 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{Buffer, BufferMut};
+    use super::{Buffer, BufferBuilder, BufferMut};
+    use crate::datatypes;
     use std::io::Write;
 
     #[test]
@@ -414,8 +435,28 @@ mod tests {
         assert_eq!(19, buf.len());
         assert_eq!(b"aaaa bbbb cccc dddd", buf.data());
 
-        let immutable_buf = buf.build();
+        let immutable_buf: Buffer = buf.into();
         assert_eq!(19, immutable_buf.len());
         assert_eq!(b"aaaa bbbb cccc dddd", immutable_buf.data());
+    }
+
+    macro_rules! check_as_typed_data {
+        ($input: expr, $primitive_t: ty) => {{
+            let mut builder: BufferBuilder<$primitive_t> = BufferBuilder::with_capacity(1).unwrap();
+            builder.extend_from_slice($input).unwrap();
+            let buf = builder.build();
+            let slice =
+                unsafe { buf.as_slice::<<$primitive_t as datatypes::PrimitiveType>::Native>() };
+            assert_eq!($input, slice);
+        }};
+    }
+
+    #[test]
+    fn buffer_builder_extend_from_slice() {
+        check_as_typed_data!(&[1_i64, 3_i64, 6_i64], datatypes::Int64Type);
+        check_as_typed_data!(&[1_u8, 3_u8, 6_u8], datatypes::UInt8Type);
+        check_as_typed_data!(&[1_u32, 3_u32, 6_u32], datatypes::UInt32Type);
+        check_as_typed_data!(&[1_f64, 3_f64, 6_f64], datatypes::Float64Type);
+        check_as_typed_data!(&[1_i64, 3_i64, 6_i64], datatypes::TimestampSecondType);
     }
 }

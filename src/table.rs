@@ -49,9 +49,10 @@ impl Table {
             .iter()
             .map(|field| match field.data_type() {
                 DataType::Int64 | DataType::Timestamp(_) => Column::new::<i64>(),
+                DataType::UInt8 => Column::new::<u8>(),
+                DataType::UInt32 => Column::new::<u32>(),
                 DataType::Float64 => Column::new::<f64>(),
                 DataType::Utf8 => Column::new::<String>(),
-                DataType::UInt32 => Column::new::<u32>(),
             })
             .collect();
         Self {
