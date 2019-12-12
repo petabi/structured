@@ -1,6 +1,5 @@
 use chrono::{NaiveDateTime, NaiveTime, Timelike};
 use dashmap::DashMap;
-use itertools::izip;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use statistical::*;
@@ -18,7 +17,6 @@ use crate::{DataType, Schema};
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const NUM_OF_TOP_N: usize = 30;
 
-type ColumnOfOneRow = DescriptionElement;
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
 
@@ -102,6 +100,7 @@ impl Table {
 
     pub fn describe(
         &self,
+        rows: &[usize],
         column_types: &Arc<Vec<ColumnType>>,
         r_enum_maps: &ReverseEnumMaps,
     ) -> Vec<Description> {
@@ -110,10 +109,12 @@ impl Table {
             .enumerate()
             .map(|(index, column)| {
                 if let ColumnType::Enum = column_types[index] {
-                    column
-                        .describe_enum(r_enum_maps.get(&index).unwrap_or(&Arc::new(HashMap::new())))
+                    column.describe_enum(
+                        rows,
+                        r_enum_maps.get(&index).unwrap_or(&Arc::new(HashMap::new())),
+                    )
                 } else {
-                    column.describe(column_types[index])
+                    column.describe(rows, column_types[index])
                 }
             })
             .collect()
@@ -121,46 +122,6 @@ impl Table {
 
     pub fn get_index_of_event(&self, eventid: u64) -> Option<&usize> {
         self.event_ids.get(&eventid)
-    }
-
-    pub fn push_one_row(
-        &mut self,
-        one_row: Vec<ColumnOfOneRow>,
-        event_id: u64,
-    ) -> Result<(), &'static str> {
-        for (col, val) in izip!(self.columns.iter_mut(), one_row) {
-            match val {
-                ColumnOfOneRow::Int(v) => {
-                    if let Some(c) = col.values_mut::<i64>() {
-                        c.push(v)
-                    };
-                }
-                ColumnOfOneRow::UInt(v) => {
-                    if let Some(c) = col.values_mut::<u32>() {
-                        c.push(v)
-                    };
-                }
-                ColumnOfOneRow::Float(v) => {
-                    if let Some(c) = col.values_mut::<f64>() {
-                        c.push(v)
-                    };
-                }
-                ColumnOfOneRow::Text(v) => {
-                    if let Some(c) = col.values_mut::<String>() {
-                        c.push(v)
-                    };
-                }
-                ColumnOfOneRow::DateTime(v) => {
-                    if let Some(c) = col.values_mut::<i64>() {
-                        c.push(v.timestamp())
-                    };
-                }
-                _ => unreachable!(), // by implementation
-            }
-        }
-        let len = self.event_ids.len();
-        self.event_ids.entry(event_id).or_insert(len);
-        Ok(())
     }
 
     pub fn limit_dimension(
@@ -277,24 +238,24 @@ macro_rules! column_append {
 }
 
 macro_rules! describe_all {
-    ( $cd:expr, $d:expr, $t1:ty, $t2:expr) => {
-        describe_min_max!($cd, $d, $t2);
-        describe_top_n!($cd, $d, $t2);
-        describe_mean_deviation!($cd, $d);
+    ( $rows:expr, $cd:expr, $d:expr, $t1:ty, $t2:expr) => {
+        describe_min_max!($rows, $cd, $d, $t2);
+        describe_top_n!($rows, $cd, $d, $t2);
+        describe_mean_deviation!($rows, $cd, $d);
     };
 }
 
 macro_rules! describe_min_max {
-    ( $cd:expr, $d:expr, $t2:expr ) => {{
-        let (min, max) = find_min_max($cd);
+    ( $rows:expr, $cd:expr, $d:expr, $t2:expr ) => {{
+        let (min, max) = find_min_max($rows, $cd);
         $d.min = Some($t2(min));
         $d.max = Some($t2(max));
     }};
 }
 
 macro_rules! describe_mean_deviation {
-    ( $cd:expr, $d:expr ) => {
-        let vf: Vec<f64> = $cd.iter().map(|x| *x as f64).collect();
+    ( $rows:expr, $cd:expr, $d:expr ) => {
+        let vf: Vec<f64> = $rows.iter().map(|r| $cd[*r] as f64).collect();
         let m = mean(&vf);
         $d.mean = Some(m);
         $d.s_deviation = Some(population_standard_deviation(&vf, Some(m)));
@@ -302,9 +263,9 @@ macro_rules! describe_mean_deviation {
 }
 
 macro_rules! describe_top_n {
-    ( $cd:expr, $d:expr, $t2:expr ) => {
-        let top_n_native = count_sort($cd);
-        $d.count = $cd.len();
+    ( $rows:expr, $cd:expr, $d:expr, $t2:expr ) => {
+        let top_n_native = count_sort($rows, $cd);
+        $d.count = $rows.len();
         $d.unique_count = top_n_native.len();
         let mut top_n: Vec<(DescriptionElement, usize)> = Vec::new();
         let top_n_num = if NUM_OF_TOP_N > top_n_native.len() {
@@ -313,7 +274,7 @@ macro_rules! describe_top_n {
             NUM_OF_TOP_N
         };
         for (x, y) in &top_n_native[0..top_n_num] {
-            top_n.push(($t2(x.clone()), *y));
+            top_n.push(($t2((*x).clone()), *y));
         }
         $d.mode = Some(top_n[0].0.clone());
         $d.top_n = Some(top_n);
@@ -387,8 +348,12 @@ impl Column {
         self.inner.downcast_mut::<ColumnData<T>>()
     }
 
-    pub fn describe_enum(&self, reverse_map: &Arc<HashMap<u32, Vec<String>>>) -> Description {
-        let desc = self.describe(ColumnType::Enum);
+    pub fn describe_enum(
+        &self,
+        rows: &[usize],
+        reverse_map: &Arc<HashMap<u32, Vec<String>>>,
+    ) -> Description {
+        let desc = self.describe(rows, ColumnType::Enum);
 
         let (top_n, mode) = {
             if reverse_map.is_empty() {
@@ -491,17 +456,17 @@ impl Column {
         }
     }
 
-    pub fn describe(&self, column_type: ColumnType) -> Description {
+    pub fn describe(&self, rows: &[usize], column_type: ColumnType) -> Description {
         let mut desc = Description::default();
 
         match column_type {
             ColumnType::Int64 => {
                 let cd: &ColumnData<i64> = self.values().unwrap();
-                describe_all!(cd, desc, i64, DescriptionElement::Int);
+                describe_all!(rows, cd, desc, i64, DescriptionElement::Int);
             }
             ColumnType::Float64 => {
                 let cd: &ColumnData<f64> = self.values().unwrap();
-                describe_min_max!(cd, desc, DescriptionElement::Float);
+                describe_min_max!(rows, cd, desc, DescriptionElement::Float);
                 let min = if let Some(DescriptionElement::Float(f)) = desc.get_min() {
                     f
                 } else {
@@ -512,40 +477,49 @@ impl Column {
                 } else {
                     unreachable!() // by implementation
                 };
-                let (rc, rt) = describe_top_n_f64(cd, *min, *max);
-                desc.count = cd.len();
+                let (rc, rt) = describe_top_n_f64(rows, cd, *min, *max);
+                desc.count = rows.len();
                 desc.unique_count = rc;
                 desc.mode = Some(rt[0].0.clone());
                 desc.top_n = Some(rt);
 
-                describe_mean_deviation!(cd, desc);
+                describe_mean_deviation!(rows, cd, desc);
             }
             ColumnType::Enum => {
                 let cd: &ColumnData<u32> = self.values().unwrap();
-                describe_top_n!(cd, desc, DescriptionElement::UInt);
+                describe_top_n!(rows, cd, desc, DescriptionElement::UInt);
             }
             ColumnType::Utf8 => {
                 let cd: &ColumnData<String> = self.values().unwrap();
-                describe_top_n!(cd, desc, DescriptionElement::Text);
+                describe_top_n!(rows, cd, desc, DescriptionElement::Text);
             }
             ColumnType::IpAddr => {
                 let cd: &ColumnData<u32> = self.values().unwrap();
-                let cd_ipaddr: ColumnData<IpAddr> = cd
+                let cd_ipaddr: ColumnData<IpAddr> = rows
                     .iter()
-                    .map(|ip| IpAddr::from(Ipv4Addr::from(*ip)))
+                    .map(|r| IpAddr::from(Ipv4Addr::from(cd[*r])))
                     .collect();
-                describe_top_n!(&cd_ipaddr, desc, DescriptionElement::IpAddr);
+                let rows: Vec<usize> = rows.iter().enumerate().map(|(i, _r)| i).collect();
+                describe_top_n!(&rows, &cd_ipaddr, desc, DescriptionElement::IpAddr);
             }
             ColumnType::DateTime => {
-                let cd: &ColumnData<i64> = self.values().unwrap();
-                let cd_only_date_hour: ColumnData<NaiveDateTime> = cd
+                let cd: &ColumnData<NaiveDateTime> = self.values().unwrap();
+                let cd_only_date_hour: ColumnData<NaiveDateTime> = rows
                     .iter()
-                    .map(|dt| {
-                        let dt = NaiveDateTime::from_timestamp(*dt, 0);
-                        NaiveDateTime::new(dt.date(), NaiveTime::from_hms(dt.time().hour(), 0, 0))
+                    .map(|r| {
+                        NaiveDateTime::new(
+                            cd[*r].date(),
+                            NaiveTime::from_hms(cd[*r].time().hour(), 0, 0),
+                        )
                     })
                     .collect();
-                describe_top_n!(&cd_only_date_hour, desc, DescriptionElement::DateTime);
+                let rows: Vec<usize> = rows.iter().enumerate().map(|(i, _r)| i).collect();
+                describe_top_n!(
+                    &rows,
+                    &cd_only_date_hour,
+                    desc,
+                    DescriptionElement::DateTime
+                );
             }
         }
 
@@ -772,15 +746,18 @@ impl Description {
 }
 
 #[allow(clippy::ptr_arg)]
-fn count_sort<T: Clone + Eq + Hash>(cd: &ColumnData<T>) -> Vec<(T, usize)> {
-    let mut count: HashMap<&T, usize> = HashMap::new();
-    let mut top_n: Vec<(T, usize)> = Vec::new();
-    for i in cd {
-        let c = count.entry(i).or_insert(0);
+fn count_sort<'a, T: Clone + Eq + Hash>(
+    rows: &[usize],
+    cd: &'a ColumnData<T>,
+) -> Vec<(&'a T, usize)> {
+    let mut count: HashMap<&'a T, usize> = HashMap::new();
+    let mut top_n: Vec<(&'a T, usize)> = Vec::new();
+    for r in rows {
+        let c = count.entry(&cd[*r]).or_insert(0);
         *c += 1;
     }
     for (k, v) in &count {
-        top_n.push(((*k).clone(), *v));
+        top_n.push((*k, *v));
     }
     top_n.sort_unstable_by(|a, b| b.1.cmp(&a.1));
     top_n
@@ -788,6 +765,7 @@ fn count_sort<T: Clone + Eq + Hash>(cd: &ColumnData<T>) -> Vec<(T, usize)> {
 
 #[allow(clippy::ptr_arg)]
 fn describe_top_n_f64(
+    rows: &[usize],
     cd: &ColumnData<f64>,
     min: f64,
     max: f64,
@@ -799,8 +777,11 @@ fn describe_top_n_f64(
         item.0 = i;
     }
 
-    for d in cd.iter() {
-        let mut slot = ((d - min) / interval).floor().to_usize().expect("< 100");
+    for r in rows {
+        let mut slot = ((cd[*r] - min) / interval)
+            .floor()
+            .to_usize()
+            .expect("< 100");
         if slot == NUM_OF_FLOAT_INTERVALS {
             slot = NUM_OF_FLOAT_INTERVALS - 1;
         }
@@ -835,19 +816,20 @@ fn describe_top_n_f64(
 }
 
 #[allow(clippy::ptr_arg)]
-fn find_min_max<T: PartialOrd + Clone>(cd: &ColumnData<T>) -> (T, T) {
-    let mut min = cd.first().unwrap();
-    let mut max = cd.first().unwrap();
+fn find_min_max<T: PartialOrd + Clone>(rows: &[usize], cd: &ColumnData<T>) -> (T, T) {
+    let mut min = cd[rows[0]].clone();
+    let mut max = cd[rows[0]].clone();
 
-    for i in cd.iter() {
-        if min > i {
-            min = i;
+    for r in rows {
+        let data = &cd[*r];
+        if min > *data {
+            min = data.clone();
         }
-        if max < i {
-            max = i;
+        if max < *data {
+            max = data.clone();
         }
     }
-    ((*min).clone(), (*max).clone())
+    (min, max)
 }
 
 macro_rules! column_from {
@@ -941,28 +923,14 @@ mod tests {
             Ipv4Addr::new(127, 0, 0, 3).into(),
         ];
         let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
-        let c4_v: Vec<i64> = vec![
-            NaiveDate::from_ymd(2019, 9, 22)
-                .and_hms(6, 10, 11)
-                .timestamp(),
-            NaiveDate::from_ymd(2019, 9, 22)
-                .and_hms(6, 15, 11)
-                .timestamp(),
-            NaiveDate::from_ymd(2019, 9, 21)
-                .and_hms(20, 10, 11)
-                .timestamp(),
-            NaiveDate::from_ymd(2019, 9, 21)
-                .and_hms(20, 10, 11)
-                .timestamp(),
-            NaiveDate::from_ymd(2019, 9, 22)
-                .and_hms(6, 45, 11)
-                .timestamp(),
-            NaiveDate::from_ymd(2019, 9, 21)
-                .and_hms(8, 10, 11)
-                .timestamp(),
-            NaiveDate::from_ymd(2019, 9, 22)
-                .and_hms(9, 10, 11)
-                .timestamp(),
+        let c4_v: Vec<NaiveDateTime> = vec![
+            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 10, 11),
+            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 15, 11),
+            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
+            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
+            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 45, 11),
+            NaiveDate::from_ymd(2019, 9, 21).and_hms(8, 10, 11),
+            NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
         ];
         let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
 
@@ -973,9 +941,7 @@ mod tests {
         let c4 = Column::from(c4_v);
         let c5 = Column::from(c5_v);
         let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
-        let table_org = Table::try_from(c_v).expect("invalid columns");
-        let table = table_org.clone();
-        move_table_add_row(table_org);
+        let table = Table::try_from(c_v).expect("invalid columns");
         let column_types = Arc::new(vec![
             ColumnType::Int64,
             ColumnType::Utf8,
@@ -984,7 +950,8 @@ mod tests {
             ColumnType::DateTime,
             ColumnType::Enum,
         ]);
-        let ds = table.describe(&column_types, &reverse_enum_maps(&HashMap::new()));
+        let rows = vec![0_usize, 3, 1, 4, 2, 6, 5];
+        let ds = table.describe(&rows, &column_types, &reverse_enum_maps(&HashMap::new()));
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -1008,7 +975,7 @@ mod tests {
         c5_map.insert(7, "t3".to_string());
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
-        let ds = table.describe(&column_types, &reverse_enum_maps(&labels));
+        let ds = table.describe(&rows, &column_types, &reverse_enum_maps(&labels));
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -1028,30 +995,5 @@ mod tests {
             DescriptionElement::Enum("t2".to_string()),
             *ds[5].get_mode().unwrap()
         );
-    }
-
-    pub fn move_table_add_row(mut table: Table) {
-        let one_row: Vec<ColumnOfOneRow> = vec![
-            ColumnOfOneRow::Int(3),
-            ColumnOfOneRow::Text("Hundred".to_string()),
-            ColumnOfOneRow::UInt(Ipv4Addr::new(127, 0, 0, 100).into()),
-            ColumnOfOneRow::Float(100.100),
-            ColumnOfOneRow::DateTime(NaiveDate::from_ymd(2019, 10, 10).and_hms(10, 10, 10)),
-            ColumnOfOneRow::UInt(7),
-        ];
-        table
-            .push_one_row(one_row, 1)
-            .expect("Failure in adding a row");
-        let column_types = Arc::new(vec![
-            ColumnType::Int64,
-            ColumnType::Utf8,
-            ColumnType::IpAddr,
-            ColumnType::Float64,
-            ColumnType::DateTime,
-            ColumnType::Enum,
-        ]);
-        let ds = table.describe(&column_types, &reverse_enum_maps(&HashMap::new()));
-        assert_eq!(DescriptionElement::Int(3), ds[0].get_top_n().unwrap()[0].0);
-        assert_eq!(4, ds[0].get_top_n().unwrap()[0].1);
     }
 }
