@@ -127,7 +127,9 @@ pub struct Field {
     data_type: DataType,
 }
 
-pub trait NativeType: fmt::Debug + Send + Sync + Copy + PartialOrd + FromStr + 'static {
+pub trait NativeType:
+    fmt::Debug + Send + Sync + Copy + PartialOrd + FromStr + AsRef<[u8]> + 'static
+{
     fn into_json_value(self) -> Option<Value>;
 }
 
