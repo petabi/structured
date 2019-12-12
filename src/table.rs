@@ -46,6 +46,7 @@ impl Table {
             .fields()
             .iter()
             .map(|field| match field.data_type() {
+                DataType::Int32 => Column::new::<i32>(),
                 DataType::Int64 | DataType::Timestamp(_) => Column::new::<i64>(),
                 DataType::UInt8 => Column::new::<u8>(),
                 DataType::UInt32 => Column::new::<u32>(),

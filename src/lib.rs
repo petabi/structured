@@ -1,4 +1,4 @@
-mod arrays;
+mod array;
 mod bitmap;
 pub mod csv;
 mod datatypes;
