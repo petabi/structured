@@ -274,7 +274,7 @@ macro_rules! describe_top_n {
             NUM_OF_TOP_N
         };
         for (x, y) in &top_n_native[0..top_n_num] {
-            top_n.push(($t2(x.clone()), *y));
+            top_n.push(($t2((*x).clone()), *y));
         }
         $d.mode = Some(top_n[0].0.clone());
         $d.top_n = Some(top_n);
@@ -746,15 +746,18 @@ impl Description {
 }
 
 #[allow(clippy::ptr_arg)]
-fn count_sort<T: Clone + Eq + Hash>(rows: &[usize], cd: &ColumnData<T>) -> Vec<(T, usize)> {
-    let mut count: HashMap<&T, usize> = HashMap::new();
-    let mut top_n: Vec<(T, usize)> = Vec::new();
+fn count_sort<'a, T: Clone + Eq + Hash>(
+    rows: &[usize],
+    cd: &'a ColumnData<T>,
+) -> Vec<(&'a T, usize)> {
+    let mut count: HashMap<&'a T, usize> = HashMap::new();
+    let mut top_n: Vec<(&'a T, usize)> = Vec::new();
     for r in rows {
         let c = count.entry(&cd[*r]).or_insert(0);
         *c += 1;
     }
     for (k, v) in &count {
-        top_n.push(((*k).clone(), *v));
+        top_n.push((*k, *v));
     }
     top_n.sort_unstable_by(|a, b| b.1.cmp(&a.1));
     top_n
