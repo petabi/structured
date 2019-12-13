@@ -31,6 +31,7 @@ impl Buffer {
     ///
     /// The size of the slice should not overflow when aligned on a
     /// 64-byte boundary, i.e., `vec.len() <= usize::max_value() - 63`.
+    #[allow(dead_code)]
     pub(crate) unsafe fn from_small_slice(vec: &[u8]) -> Self {
         debug_assert!(vec.len() <= usize::max_value() - 63);
         let capacity = bit_util::round_upto_multiple_of_64(vec.len());
@@ -94,6 +95,7 @@ impl BufferData {
     /// of bytes allocated for the memory at `ptr`. If `owned` is `true`, the
     /// memory at `ptr` must be deallocated by this `BufferData`'s
     /// implementation only.
+    #[allow(dead_code)]
     unsafe fn new(ptr: *const u8, len: usize, owned: bool) -> Self {
         debug_assert!(!ptr.is_null());
         Self { ptr, len, owned }
@@ -193,6 +195,7 @@ impl BufferMut {
     }
 
     /// Returns the number of bytes written in this buffer.
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.len
     }
@@ -317,14 +320,12 @@ pub enum AllocationError {
 }
 
 /// Buffer builder.
-#[allow(dead_code)]
 pub struct BufferBuilder<T: PrimitiveType> {
     buffer: BufferMut,
     len: usize,
     _marker: PhantomData<T>,
 }
 
-#[allow(dead_code)]
 impl<T> BufferBuilder<T>
 where
     [T::Native]: RawBytes,

@@ -1,3 +1,3 @@
-mod reader;
+pub(crate) mod reader;
 
 pub use reader::FieldParser;
