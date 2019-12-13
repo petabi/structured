@@ -504,14 +504,12 @@ impl Column {
                 describe_top_n!(&rows, &cd_ipaddr, desc, DescriptionElement::IpAddr);
             }
             ColumnType::DateTime => {
-                let cd: &ColumnData<NaiveDateTime> = self.values().unwrap();
+                let cd: &ColumnData<i64> = self.values().unwrap();
                 let cd_only_date_hour: ColumnData<NaiveDateTime> = rows
                     .iter()
                     .map(|r| {
-                        NaiveDateTime::new(
-                            cd[*r].date(),
-                            NaiveTime::from_hms(cd[*r].time().hour(), 0, 0),
-                        )
+                        let dt = NaiveDateTime::from_timestamp(cd[*r], 0);
+                        NaiveDateTime::new(dt.date(), NaiveTime::from_hms(dt.time().hour(), 0, 0))
                     })
                     .collect();
                 let rows: Vec<usize> = rows.iter().enumerate().map(|(i, _r)| i).collect();
@@ -924,14 +922,28 @@ mod tests {
             Ipv4Addr::new(127, 0, 0, 3).into(),
         ];
         let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
-        let c4_v: Vec<NaiveDateTime> = vec![
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 15, 11),
-            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 45, 11),
-            NaiveDate::from_ymd(2019, 9, 21).and_hms(8, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
+        let c4_v: Vec<i64> = vec![
+            NaiveDate::from_ymd(2019, 9, 22)
+                .and_hms(6, 10, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 22)
+                .and_hms(6, 15, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 21)
+                .and_hms(20, 10, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 21)
+                .and_hms(20, 10, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 22)
+                .and_hms(6, 45, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 21)
+                .and_hms(8, 10, 11)
+                .timestamp(),
+            NaiveDate::from_ymd(2019, 9, 22)
+                .and_hms(9, 10, 11)
+                .timestamp(),
         ];
         let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
 
