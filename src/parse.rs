@@ -52,7 +52,7 @@ pub fn records_to_columns(
                         map.get_mut(&val).map_or_else(
                             || {
                                 map.insert(
-                                    val.clone(),
+                                    val,
                                     (
                                         (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
                                         1_usize, // count starts with 1
