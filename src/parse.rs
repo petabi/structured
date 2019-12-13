@@ -55,14 +55,14 @@ pub fn records_to_columns(
                                     val.clone(),
                                     (
                                         (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
-                                        0_usize,
+                                        1_usize, // count starts with 1
                                     ),
                                 )
                                 .unwrap_or((u32::max_value(), 0))
                                 .0
                             },
                             |mut v| {
-                                *v = (v.0, v.1 + 1);
+                                *v = (v.0, v.1 + 1); // add count
                                 v.0
                             },
                         )
