@@ -48,23 +48,18 @@ pub fn records_to_columns(
             FieldParser::Dict => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                    let enum_value = if let Some(map) = labels.get(&fid) {
-                        let enum_value = map
-                            .get_or_insert(
-                                &val,
+                    col.push(labels.get(&fid).map_or_else(u32::max_value, |map| {
+                        map.entry(val)
+                            .and_modify(|v| *v = (v.0, v.1 + 1))
+                            .or_insert_with(|| {
                                 (
                                     (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
-                                    0_usize,
-                                ),
-                            )
-                            .0;
-                        map.alter(&val, |v| (v.0, v.1 + 1));
-                        enum_value
+                                    1_usize,
+                                )
+                            })
+                            .0
+                    }));
                     // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
-                    } else {
-                        u32::max_value()
-                    };
-                    col.push(enum_value);
                     col
                 }))
             }
@@ -83,14 +78,14 @@ mod tests {
     pub fn convert_to_conc_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
     ) -> ConcurrentEnumMaps {
-        let c_enum_maps = Arc::new(DashMap::default());
+        let c_enum_maps = Arc::new(DashMap::new());
 
         for (column, map) in enum_maps {
-            let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
+            let c_map = Arc::new(DashMap::<String, (u32, usize)>::new());
             for (data, enum_val) in map {
                 c_map.insert(data.clone(), (enum_val.0, enum_val.1));
             }
-            c_enum_maps.insert(*column, c_map)
+            c_enum_maps.insert(*column, c_map);
         }
         c_enum_maps
     }
