@@ -1,6 +1,5 @@
 use crate::csv::FieldParser;
 use crate::Column;
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use csv::{ByteRecord, ByteRecordIter};
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
@@ -18,7 +17,7 @@ pub fn records_to_columns(
         .iter()
         .enumerate()
         .map(|(fid, parser)| match parser {
-            FieldParser::Int64(parse) => {
+            FieldParser::Int64(parse) | FieldParser::Timestamp(parse) => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let v = v.next().unwrap();
                     col.push(parse(v).unwrap_or_default());
@@ -43,18 +42,6 @@ pub fn records_to_columns(
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let v = v.next().unwrap();
                     col.push(parse(v).unwrap_or_default());
-                    col
-                }))
-            }
-            FieldParser::DateTime(parse) => {
-                Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                    let v = v.next().unwrap();
-                    col.push(parse(v).unwrap_or_else(|_| {
-                        NaiveDateTime::new(
-                            NaiveDate::from_ymd(1, 1, 1),
-                            NaiveTime::from_hms(0, 0, 0),
-                        )
-                    }));
                     col
                 }))
             }
@@ -88,6 +75,7 @@ pub fn records_to_columns(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
     use std::collections::HashMap;
     use std::net::Ipv4Addr;
@@ -176,9 +164,9 @@ mod tests {
                 val.parse::<Ipv4Addr>().map(Into::into).map_err(Into::into)
             }),
             FieldParser::float64(),
-            FieldParser::new_datetime(move |v| {
+            FieldParser::timestamp_with_parser(move |v| {
                 let val: String = v.iter().map(|&c| c as char).collect();
-                NaiveDateTime::parse_from_str(&val, fmt)
+                Ok(NaiveDateTime::parse_from_str(&val, fmt)?.timestamp())
             }),
             FieldParser::Dict,
         ];
@@ -193,7 +181,7 @@ mod tests {
                 .collect::<Vec<_>>(),
         );
         let c3 = Column::from(c3_v);
-        let c4 = Column::from(c4_v);
+        let c4 = Column::from(c4_v.iter().map(|v| v.timestamp()).collect::<Vec<_>>());
         let c5 = Column::from(c5_v);
         let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
         (parsers, records, labels, columns)

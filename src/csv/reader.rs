@@ -1,7 +1,5 @@
-use chrono::format::ParseError as TimeParseError;
-use chrono::NaiveDateTime;
 use std::fmt;
-use std::str::FromStr;
+use std::str::{self, FromStr};
 use std::sync::Arc;
 
 pub struct ParseError {
@@ -38,6 +36,14 @@ impl From<std::num::ParseIntError> for ParseError {
     }
 }
 
+impl From<chrono::format::ParseError> for ParseError {
+    fn from(error: chrono::format::ParseError) -> Self {
+        Self {
+            inner: Box::new(error),
+        }
+    }
+}
+
 impl From<std::str::Utf8Error> for ParseError {
     fn from(error: std::str::Utf8Error) -> Self {
         Self {
@@ -49,7 +55,6 @@ impl From<std::str::Utf8Error> for ParseError {
 pub type Int64Parser = dyn Fn(&[u8]) -> Result<i64, ParseError> + Send + Sync;
 pub type UInt32Parser = dyn Fn(&[u8]) -> Result<u32, ParseError> + Send + Sync;
 pub type Float64Parser = dyn Fn(&[u8]) -> Result<f64, ParseError> + Send + Sync;
-pub type DateTimeParser = dyn Fn(&[u8]) -> Result<NaiveDateTime, TimeParseError> + Send + Sync;
 
 #[derive(Clone)]
 pub enum FieldParser {
@@ -57,7 +62,7 @@ pub enum FieldParser {
     UInt32(Arc<UInt32Parser>),
     Float64(Arc<Float64Parser>),
     Utf8,
-    DateTime(Arc<DateTimeParser>),
+    Timestamp(Arc<Int64Parser>),
     Dict,
 }
 
@@ -74,6 +79,10 @@ impl FieldParser {
         Self::Float64(Arc::new(parse::<f64>))
     }
 
+    pub fn timestamp() -> Self {
+        Self::Int64(Arc::new(parse_timestamp))
+    }
+
     pub fn uint32_with_parser<P>(parser: P) -> Self
     where
         P: Fn(&[u8]) -> Result<u32, ParseError> + Send + Sync + 'static,
@@ -81,11 +90,11 @@ impl FieldParser {
         Self::UInt32(Arc::new(parser))
     }
 
-    pub fn new_datetime<P>(parser: P) -> Self
+    pub fn timestamp_with_parser<P>(parser: P) -> Self
     where
-        P: Fn(&[u8]) -> Result<NaiveDateTime, TimeParseError> + Send + Sync + 'static,
+        P: Fn(&[u8]) -> Result<i64, ParseError> + Send + Sync + 'static,
     {
-        Self::DateTime(Arc::new(parser))
+        Self::Timestamp(Arc::new(parser))
     }
 }
 
@@ -96,7 +105,7 @@ impl<'a> fmt::Debug for FieldParser {
             Self::UInt32(_) => write!(f, "UInt32"),
             Self::Float64(_) => write!(f, "Float64"),
             Self::Utf8 => write!(f, "Utf8"),
-            Self::DateTime(_) => write!(f, "DateTime"),
+            Self::Timestamp(_) => write!(f, "Timestamp"),
             Self::Dict => write!(f, "Dict"),
         }
     }
@@ -108,4 +117,12 @@ where
     <T as FromStr>::Err: Into<ParseError>,
 {
     std::str::from_utf8(v)?.parse::<T>().map_err(Into::into)
+}
+
+/// Parses timestamp in RFC 3339 format.
+fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
+    Ok(
+        chrono::NaiveDateTime::parse_from_str(str::from_utf8(v)?, "%Y-%m-%dT%H:%M:%S%.f%:z")?
+            .timestamp(),
+    )
 }
