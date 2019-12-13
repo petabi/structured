@@ -18,17 +18,17 @@ pub fn records_to_columns(
         .iter()
         .enumerate()
         .map(|(fid, parser)| match parser {
-            FieldParser::Int64 => {
+            FieldParser::Int64(parse) => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                    let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                    col.push(val.parse::<i64>().unwrap_or_default());
+                    let v = v.next().unwrap();
+                    col.push(parse(v).unwrap_or_default());
                     col
                 }))
             }
-            FieldParser::Float64 => {
+            FieldParser::Float64(parse) => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
-                    let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                    col.push(val.parse::<f64>().unwrap_or_default());
+                    let v = v.next().unwrap();
+                    col.push(parse(v).unwrap_or_default());
                     col
                 }))
             }
@@ -169,13 +169,13 @@ mod tests {
             records.push(ByteRecord::from(row));
         }
         let parsers = [
-            FieldParser::Int64,
+            FieldParser::int64(),
             FieldParser::Utf8,
             FieldParser::uint32_with_parser(|v| {
                 let val: String = v.iter().map(|&c| c as char).collect();
                 val.parse::<Ipv4Addr>().map(Into::into).map_err(Into::into)
             }),
-            FieldParser::Float64,
+            FieldParser::float64(),
             FieldParser::new_datetime(move |v| {
                 let val: String = v.iter().map(|&c| c as char).collect();
                 NaiveDateTime::parse_from_str(&val, fmt)
