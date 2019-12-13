@@ -1,18 +1,23 @@
-mod primitive;
-mod string;
+pub(crate) mod primitive;
+pub(crate) mod string;
 
 pub use primitive::Array as PrimitiveArray;
+pub use primitive::Builder as PrimitiveBuilder;
 pub use string::Array as StringArray;
+pub use string::ArrayIter as StringArrayIter;
 
-use crate::datatypes::DataType;
+use crate::datatypes::*;
 use crate::memory::Buffer;
+use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
 /// A dynamically-typed array.
 pub trait Array: fmt::Debug {
+    fn as_any(&self) -> &dyn Any;
     /// Returns the number of elements of this array.
     fn len(&self) -> usize;
+    fn data(&self) -> &Data;
 }
 
 /// An `Array` builder.
@@ -25,7 +30,7 @@ pub trait Builder {
 
 /// A generic representation of array data.
 #[derive(PartialEq, Debug, Clone)]
-struct Data {
+pub struct Data {
     /// The element type for this array data.
     data_type: DataType,
     /// The number of elements in this array data.
@@ -33,11 +38,16 @@ struct Data {
     buffers: Vec<Buffer>,
 }
 
+impl Data {
+    pub fn data_type(&self) -> &DataType {
+        &self.data_type
+    }
+}
+
 struct RawPtrBox<T> {
     inner: *const T,
 }
 
-#[allow(dead_code)]
 impl<T> RawPtrBox<T> {
     fn new(inner: *const T) -> Self {
         Self { inner }

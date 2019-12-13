@@ -1,3 +1,7 @@
+use crate::array::{Array, Builder, PrimitiveBuilder};
+use crate::datatypes::PrimitiveType;
+use crate::memory::AllocationError;
+use csv::ByteRecord;
 use std::fmt;
 use std::str::{self, FromStr};
 use std::sync::Arc;
@@ -125,4 +129,27 @@ fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
         chrono::NaiveDateTime::parse_from_str(str::from_utf8(v)?, "%Y-%m-%dT%H:%M:%S%.f%:z")?
             .timestamp(),
     )
+}
+
+pub(crate) fn build_primitive_array<T, P>(
+    rows: &[ByteRecord],
+    col_idx: usize,
+    parse: &Arc<P>,
+) -> Result<Arc<dyn Array>, AllocationError>
+where
+    T: PrimitiveType,
+    T::Native: Default,
+    P: Fn(&[u8]) -> Result<T::Native, ParseError> + Send + Sync + ?Sized,
+{
+    let mut builder = PrimitiveBuilder::<T>::with_capacity(rows.len())?;
+    for row in rows {
+        match row.get(col_idx) {
+            Some(s) if !s.is_empty() => {
+                let t = parse(s).unwrap_or_default();
+                builder.try_push(t)?;
+            }
+            _ => builder.try_push(T::Native::default())?,
+        }
+    }
+    Ok(builder.build())
 }

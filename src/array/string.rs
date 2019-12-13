@@ -3,6 +3,7 @@ use super::{Data, RawPtrBox};
 use crate::datatypes::{DataType, Int32Type, UInt8Type};
 use crate::memory::{AllocationError, BufferBuilder};
 use num_traits::FromPrimitive;
+use std::any::Any;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::marker::PhantomData;
@@ -13,7 +14,6 @@ use std::sync::Arc;
 use thiserror::Error;
 
 /// An array whose elements are UTF-8 strings.
-#[allow(dead_code)]
 pub struct Array {
     data: Arc<Data>,
     offsets: RawPtrBox<i32>,
@@ -21,7 +21,7 @@ pub struct Array {
 }
 
 impl Array {
-    fn iter(&self) -> ArrayIter {
+    pub fn iter(&self) -> ArrayIter {
         let begin = self.offsets.get();
         ArrayIter {
             cur: begin,
@@ -33,8 +33,16 @@ impl Array {
 }
 
 impl super::Array for Array {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn len(&self) -> usize {
         self.data.len
+    }
+
+    fn data(&self) -> &Data {
+        &self.data
     }
 }
 
@@ -74,6 +82,15 @@ impl Index<usize> for Array {
     }
 }
 
+impl<'a> IntoIterator for &'a Array {
+    type Item = <ArrayIter<'a> as Iterator>::Item;
+    type IntoIter = ArrayIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl TryFrom<&[&str]> for Array {
     type Error = AllocationError;
 
@@ -86,7 +103,7 @@ impl TryFrom<&[&str]> for Array {
     }
 }
 
-struct ArrayIter<'a> {
+pub struct ArrayIter<'a> {
     cur: *const i32,
     end: *const i32,
     values: *const u8,
@@ -124,7 +141,6 @@ pub struct Builder {
 }
 
 impl Builder {
-    #[allow(dead_code)]
     pub fn with_capacity(capacity: usize) -> Result<Self, AllocationError> {
         let mut offsets = BufferBuilder::<Int32Type>::with_capacity(capacity)?;
         offsets.try_push(0)?;
@@ -134,7 +150,6 @@ impl Builder {
         })
     }
 
-    #[allow(dead_code)]
     pub fn try_push(&mut self, val: &str) -> Result<(), AllocationError> {
         if val.len() > i32::max_value() as usize - self.values.len() {
             return Err(AllocationError::TooLarge);
@@ -181,6 +196,8 @@ impl super::Builder for Builder {
 pub enum Error {
     #[error("memory error: {0}")]
     MemoryError(#[from] AllocationError),
+    #[error("parse error: {0}")]
+    ParseError(#[from] std::str::Utf8Error),
 }
 
 #[cfg(test)]

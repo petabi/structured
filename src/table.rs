@@ -1,18 +1,23 @@
+use crate::array::*;
+use crate::datatypes::*;
+use crate::memory::AllocationError;
+use crate::{DataType, Schema};
 use chrono::{NaiveDateTime, NaiveTime, Timelike};
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use statistical::*;
-use std::any::Any;
 use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::hash::Hash;
+use std::iter::{Flatten, Iterator};
+use std::marker::PhantomData;
 use std::net::{IpAddr, Ipv4Addr};
-use std::slice::Iter;
+use std::ops::{Deref, Index};
+use std::slice;
 use std::sync::Arc;
-
-use crate::{DataType, Schema};
+use std::vec;
 
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const NUM_OF_TOP_N: usize = 30;
@@ -73,15 +78,8 @@ impl Table {
     }
 
     /// Returns an `Iterator` for columns.
-    pub fn columns(&self) -> Iter<Column> {
+    pub fn columns(&self) -> slice::Iter<Column> {
         self.columns.iter()
-    }
-
-    /// Returns a `Column` for the given column index.
-    #[allow(dead_code)] // Used by tests only.
-    pub fn get_column<T: 'static>(&self, index: usize) -> Option<&ColumnData<T>> {
-        let col = self.columns.get(index)?;
-        col.values()
     }
 
     /// Returns the number of columns in the table.
@@ -178,18 +176,30 @@ impl Table {
             );
 
             let mapped_enums = map_vector.iter().map(|v| v.1).collect();
-            self.limit_enum_values(*column_index, &mapped_enums);
+            self.limit_enum_values(*column_index, &mapped_enums)
+                .unwrap();
         }
         (enum_portion_dimensions, enum_set_dimensions)
     }
 
-    fn limit_enum_values(&mut self, column_index: usize, mapped_enums: &HashSet<u32>) {
-        let cd: &mut ColumnData<u32> = self.columns[column_index].values_mut().unwrap();
-        for value in cd {
-            if !mapped_enums.contains(value) {
-                *value = 0_u32; // if unmapped out of the predefined rate, enum value set to 0_u32.
-            }
+    fn limit_enum_values(
+        &mut self,
+        column_index: usize,
+        mapped_enums: &HashSet<u32>,
+    ) -> Result<(), AllocationError> {
+        let col = &mut self.columns[column_index];
+        let mut builder = primitive::Builder::<UInt32Type>::with_capacity(col.len())?;
+        for val in col.iter::<UInt32ArrayType>().unwrap() {
+            let new_val = if mapped_enums.contains(val) {
+                *val
+            } else {
+                0_u32 // if unmapped out of the predefined rate, enum value set to 0_u32.
+            };
+            builder.try_push(new_val)?;
         }
+        col.arrays.clear();
+        col.arrays.push(builder.build());
+        Ok(())
     }
 }
 
@@ -216,57 +226,30 @@ impl TryFrom<Vec<Column>> for Table {
     }
 }
 
-macro_rules! column_len {
-    ( $s:expr, $t:ty ) => {
-        let col = $s
-            .inner
-            .downcast_ref::<ColumnData<$t>>()
-            .expect("column type mismatch");
-        return col.len();
-    };
-}
-
-macro_rules! column_append {
-    ( $dst:expr, $src:expr, $t:ty ) => {
-        let dst_col = $dst
-            .downcast_mut::<ColumnData<$t>>()
-            .expect("column type mismatch");
-        let src_col = $src
-            .downcast_mut::<ColumnData<$t>>()
-            .expect("column type mismatch");
-        dst_col.append(src_col);
-    };
-}
-
-macro_rules! describe_all {
-    ( $rows:expr, $cd:expr, $d:expr, $t1:ty, $t2:expr) => {
-        describe_min_max!($rows, $cd, $d, $t2);
-        describe_top_n!($rows, $cd, $d, $t2);
-        describe_mean_deviation!($rows, $cd, $d);
-    };
-}
-
 macro_rules! describe_min_max {
-    ( $rows:expr, $cd:expr, $d:expr, $t2:expr ) => {{
-        let (min, max) = find_min_max($rows, $cd);
-        $d.min = Some($t2(min));
-        $d.max = Some($t2(max));
+    ( $iter:expr, $d:expr, $t2:expr ) => {{
+        if let Some(minmax) = find_min_max($iter) {
+            $d.min = Some($t2(minmax.min));
+            $d.max = Some($t2(minmax.max));
+        } else {
+            $d.min = None;
+            $d.max = None;
+        }
     }};
 }
 
 macro_rules! describe_mean_deviation {
-    ( $rows:expr, $cd:expr, $d:expr ) => {
-        let vf: Vec<f64> = $rows.iter().map(|r| $cd[*r] as f64).collect();
-        let m = mean(&vf);
+    ( $vf:expr, $t1:ty, $d:expr ) => {
+        let m = mean(&$vf);
         $d.mean = Some(m);
-        $d.s_deviation = Some(population_standard_deviation(&vf, Some(m)));
+        $d.s_deviation = Some(population_standard_deviation(&$vf, Some(m)));
     };
 }
 
 macro_rules! describe_top_n {
-    ( $rows:expr, $cd:expr, $d:expr, $t2:expr ) => {
-        let top_n_native = count_sort($rows, $cd);
-        $d.count = $rows.len();
+    ( $iter:expr, $len:expr, $d:expr, $t1:ty, $t2:expr ) => {
+        let top_n_native: Vec<(&$t1, usize)> = count_sort($iter);
+        $d.count = $len;
         $d.unique_count = top_n_native.len();
         let mut top_n: Vec<(DescriptionElement, usize)> = Vec::new();
         let top_n_num = if NUM_OF_TOP_N > top_n_native.len() {
@@ -275,18 +258,19 @@ macro_rules! describe_top_n {
             NUM_OF_TOP_N
         };
         for (x, y) in &top_n_native[0..top_n_num] {
-            top_n.push(($t2((*x).clone()), *y));
+            top_n.push(($t2((*x).to_owned()), *y));
         }
         $d.mode = Some(top_n[0].0.clone());
         $d.top_n = Some(top_n);
     };
 }
 
+#[derive(Clone, Debug)]
 pub struct Column {
-    inner: Box<dyn Any + Send + Sync>,
+    arrays: Vec<Arc<dyn Array>>,
+    cumlen: Vec<usize>,
+    len: usize,
 }
-
-type ColumnData<T> = Vec<T>;
 
 impl Column {
     pub fn new<T>() -> Self
@@ -294,59 +278,93 @@ impl Column {
         T: Send + Sync + 'static,
     {
         Self {
-            inner: Box::new(ColumnData::<T>::new()),
+            arrays: Vec::new(),
+            cumlen: vec![0],
+            len: 0,
         }
     }
 
-    pub fn with_data<T>(data: ColumnData<T>) -> Self
+    pub fn try_from_slice<T>(slice: &[T::Native]) -> Result<Self, AllocationError>
     where
-        T: Send + Sync + 'static,
+        T: PrimitiveType,
     {
-        Self {
-            inner: Box::new(data),
-        }
+        let array: Arc<dyn Array> = Arc::new(TryInto::<primitive::Array<T>>::try_into(slice)?);
+        Ok(array.into())
     }
 
     fn len(&self) -> usize {
-        if self.inner.is::<ColumnData<i64>>() {
-            column_len!(self, i64);
-        } else if self.inner.is::<ColumnData<f64>>() {
-            column_len!(self, f64);
-        } else if self.inner.is::<ColumnData<u32>>() {
-            column_len!(self, u32);
-        } else if self.inner.is::<ColumnData<String>>() {
-            column_len!(self, String);
-        } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
-            column_len!(self, NaiveDateTime);
-        } else {
-            panic!("invalid column type")
+        self.len
+    }
+
+    fn try_get<'a, A, T>(&self, index: usize) -> Result<Option<&T>, TypeError>
+    where
+        A: ArrayType<Elem = &'a T>,
+        A::Array: Index<usize, Output = T> + 'static,
+        T: ?Sized + 'static,
+    {
+        if index >= self.len() {
+            return Ok(None);
         }
+        let (array_index, inner_index) = match self.cumlen.binary_search(&index) {
+            Ok(i) => (i, 0),
+            Err(i) => (i - 1, index - self.cumlen[i - 1]),
+        };
+        let typed_arr =
+            if let Some(arr) = self.arrays[array_index].as_any().downcast_ref::<A::Array>() {
+                arr
+            } else {
+                return Err(TypeError());
+            };
+        Ok(Some(typed_arr.index(inner_index)))
     }
 
     fn append(&mut self, other: &mut Self) {
-        if self.inner.is::<ColumnData<i64>>() {
-            column_append!(self.inner, other.inner, i64);
-        } else if self.inner.is::<ColumnData<f64>>() {
-            column_append!(self.inner, other.inner, f64);
-        } else if self.inner.is::<ColumnData<u32>>() {
-            column_append!(self.inner, other.inner, u32);
-        } else if self.inner.is::<ColumnData<String>>() {
-            column_append!(self.inner, other.inner, String);
-        } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
-            column_append!(self.inner, other.inner, NaiveDateTime);
-        } else {
-            panic!("invalid column type");
+        // TODO: make sure the types match
+        self.arrays.append(&mut other.arrays);
+        let len = self.len;
+        self.cumlen
+            .extend(other.cumlen.iter().skip(1).map(|v| v + len));
+        self.len += other.len;
+        other.len = 0;
+    }
+
+    pub fn iter<'a, T>(&'a self) -> Result<Flatten<vec::IntoIter<&'a T::Array>>, TypeError>
+    where
+        T: ArrayType,
+        T::Array: 'static,
+        &'a T::Array: IntoIterator,
+    {
+        let mut arrays: Vec<&T::Array> = Vec::with_capacity(self.arrays.len());
+        for arr in &self.arrays {
+            let typed_arr = if let Some(arr) = arr.as_any().downcast_ref::<T::Array>() {
+                arr
+            } else {
+                return Err(TypeError());
+            };
+            arrays.push(typed_arr);
         }
+        Ok(arrays.into_iter().flatten())
     }
 
-    /// Returns the data if the type matches.
-    pub fn values<T: 'static>(&self) -> Option<&ColumnData<T>> {
-        self.inner.downcast_ref::<ColumnData<T>>()
-    }
-
-    /// Returns the mutable data if the type matches.
-    pub fn values_mut<T: 'static>(&mut self) -> Option<&mut ColumnData<T>> {
-        self.inner.downcast_mut::<ColumnData<T>>()
+    pub fn view_iter<'a, 'b, A, T>(
+        &'a self,
+        selected: &'b [usize],
+    ) -> Result<ViewIter<'a, 'b, A, T>, TypeError>
+    where
+        A: ArrayType<Elem = &'a T>,
+        A::Array: Index<usize, Output = T> + 'static,
+        T: ?Sized + 'static,
+    {
+        let mut arrays: Vec<&A::Array> = Vec::with_capacity(self.arrays.len());
+        for arr in &self.arrays {
+            let typed_arr = if let Some(arr) = arr.as_any().downcast_ref::<A::Array>() {
+                arr
+            } else {
+                return Err(TypeError());
+            };
+            arrays.push(typed_arr);
+        }
+        Ok(ViewIter::new(self, selected.iter()))
     }
 
     pub fn describe_enum(
@@ -462,12 +480,18 @@ impl Column {
 
         match column_type {
             ColumnType::Int64 => {
-                let cd: &ColumnData<i64> = self.values().unwrap();
-                describe_all!(rows, cd, desc, i64, DescriptionElement::Int);
+                let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
+                describe_min_max!(iter, desc, DescriptionElement::Int);
+                let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
+                describe_top_n!(iter, rows.len(), desc, i64, DescriptionElement::Int);
+                let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
+                #[allow(clippy::cast_precision_loss)] // 52-bit precision is good enough
+                let f_values: Vec<f64> = iter.map(|v: &i64| *v as f64).collect();
+                describe_mean_deviation!(f_values, i64, desc);
             }
             ColumnType::Float64 => {
-                let cd: &ColumnData<f64> = self.values().unwrap();
-                describe_min_max!(rows, cd, desc, DescriptionElement::Float);
+                let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
+                describe_min_max!(iter, desc, DescriptionElement::Float);
                 let min = if let Some(DescriptionElement::Float(f)) = desc.get_min() {
                     f
                 } else {
@@ -478,45 +502,53 @@ impl Column {
                 } else {
                     unreachable!() // by implementation
                 };
-                let (rc, rt) = describe_top_n_f64(rows, cd, *min, *max);
+                let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
+                let (rc, rt) = describe_top_n_f64(iter, *min, *max);
                 desc.count = rows.len();
                 desc.unique_count = rc;
                 desc.mode = Some(rt[0].0.clone());
                 desc.top_n = Some(rt);
 
-                describe_mean_deviation!(rows, cd, desc);
+                let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
+                let values = iter.cloned().collect::<Vec<_>>();
+                describe_mean_deviation!(values, f64, desc);
             }
             ColumnType::Enum => {
-                let cd: &ColumnData<u32> = self.values().unwrap();
-                describe_top_n!(rows, cd, desc, DescriptionElement::UInt);
+                let iter = self.view_iter::<UInt32ArrayType, u32>(rows).unwrap();
+                describe_top_n!(iter, self.len(), desc, u32, DescriptionElement::UInt);
             }
             ColumnType::Utf8 => {
-                let cd: &ColumnData<String> = self.values().unwrap();
-                describe_top_n!(rows, cd, desc, DescriptionElement::Text);
+                let iter = self.view_iter::<Utf8ArrayType, str>(rows).unwrap();
+                describe_top_n!(iter, self.len(), desc, str, DescriptionElement::Text);
             }
             ColumnType::IpAddr => {
-                let cd: &ColumnData<u32> = self.values().unwrap();
-                let cd_ipaddr: ColumnData<IpAddr> = rows
-                    .iter()
-                    .map(|r| IpAddr::from(Ipv4Addr::from(cd[*r])))
-                    .collect();
-                let rows: Vec<usize> = rows.iter().enumerate().map(|(i, _r)| i).collect();
-                describe_top_n!(&rows, &cd_ipaddr, desc, DescriptionElement::IpAddr);
+                let values = self
+                    .view_iter::<UInt32ArrayType, u32>(rows)
+                    .unwrap()
+                    .map(|v: &u32| IpAddr::from(Ipv4Addr::from(*v)))
+                    .collect::<Vec<_>>();
+                describe_top_n!(
+                    values.iter(),
+                    rows.len(),
+                    desc,
+                    IpAddr,
+                    DescriptionElement::IpAddr
+                );
             }
             ColumnType::DateTime => {
-                let cd: &ColumnData<i64> = self.values().unwrap();
-                let cd_only_date_hour: ColumnData<NaiveDateTime> = rows
-                    .iter()
-                    .map(|r| {
-                        let dt = NaiveDateTime::from_timestamp(cd[*r], 0);
+                let values = self
+                    .view_iter::<Int64ArrayType, i64>(rows)
+                    .unwrap()
+                    .map(|v: &i64| {
+                        let dt = NaiveDateTime::from_timestamp(*v, 0);
                         NaiveDateTime::new(dt.date(), NaiveTime::from_hms(dt.time().hour(), 0, 0))
                     })
-                    .collect();
-                let rows: Vec<usize> = rows.iter().enumerate().map(|(i, _r)| i).collect();
+                    .collect::<Vec<_>>();
                 describe_top_n!(
-                    &rows,
-                    &cd_only_date_hour,
+                    values.iter(),
+                    rows.len(),
                     desc,
+                    NaiveDateTime,
                     DescriptionElement::DateTime
                 );
             }
@@ -526,107 +558,139 @@ impl Column {
     }
 }
 
-impl Clone for Column {
-    fn clone(&self) -> Self {
-        if self.inner.is::<ColumnData<i64>>() {
-            let cd: &ColumnData<i64> = self.values().unwrap();
-            Self {
-                inner: Box::new(cd.clone()),
-            }
-        } else if self.inner.is::<ColumnData<f64>>() {
-            let cd: &ColumnData<f64> = self.values().unwrap();
-            Self {
-                inner: Box::new(cd.clone()),
-            }
-        } else if self.inner.is::<ColumnData<u32>>() {
-            let cd: &ColumnData<u32> = self.values().unwrap();
-            Self {
-                inner: Box::new(cd.clone()),
-            }
-        } else if self.inner.is::<ColumnData<String>>() {
-            let cd: &ColumnData<String> = self.values().unwrap();
-            Self {
-                inner: Box::new(cd.clone()),
-            }
-        } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
-            let cd: &ColumnData<NaiveDateTime> = self.values().unwrap();
-            Self {
-                inner: Box::new(cd.clone()),
-            }
-        } else {
-            panic!("invalid column type")
-        }
-    }
-}
-
-impl fmt::Debug for Column {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.inner.is::<ColumnData<i64>>() {
-            let cd: &ColumnData<i64> = self.values().unwrap();
-            write!(f, "{:?}", cd)
-        } else if self.inner.is::<ColumnData<u32>>() {
-            let cd: &ColumnData<u32> = self.values().unwrap();
-            write!(f, "{:?}", cd)
-        } else if self.inner.is::<ColumnData<f64>>() {
-            let cd: &ColumnData<f64> = self.values().unwrap();
-            write!(f, "{:?}", cd)
-        } else if self.inner.is::<ColumnData<String>>() {
-            let cd: &ColumnData<String> = self.values().unwrap();
-            write!(f, "{:?}", cd)
-        } else if self.inner.is::<ColumnData<NaiveDateTime>>() {
-            let cd: &ColumnData<NaiveDateTime> = self.values().unwrap();
-            write!(f, "{:?}", cd)
-        } else {
-            panic!("invalid column type")
-        }
-    }
-}
-
 impl PartialEq for Column {
     fn eq(&self, other: &Self) -> bool {
-        if self.inner.is::<ColumnData<i64>>() {
-            if !other.inner.is::<ColumnData<i64>>() {
-                return false;
+        let data_type = match (self.arrays.first(), other.arrays.first()) {
+            (Some(x_arr), Some(y_arr)) => {
+                if x_arr.data().data_type() == y_arr.data().data_type() {
+                    x_arr.data().data_type()
+                } else {
+                    return false;
+                }
             }
-            return self.inner.downcast_ref::<ColumnData<i64>>().unwrap()
-                == other.inner.downcast_ref::<ColumnData<i64>>().unwrap();
+            (Some(_), None) | (None, Some(_)) => return false,
+            (None, None) => return true,
+        };
+        if self.len() != other.len() {
+            return false;
         }
-        if self.inner.is::<ColumnData<f64>>() {
-            if !other.inner.is::<ColumnData<f64>>() {
-                return false;
-            }
-            return self.inner.downcast_ref::<ColumnData<f64>>().unwrap()
-                == other.inner.downcast_ref::<ColumnData<f64>>().unwrap();
-        }
-        if self.inner.is::<ColumnData<u32>>() {
-            if !other.inner.is::<ColumnData<u32>>() {
-                return false;
-            }
 
-            return self.inner.downcast_ref::<ColumnData<u32>>().unwrap()
-                == other.inner.downcast_ref::<ColumnData<u32>>().unwrap();
+        match data_type {
+            DataType::Int32 => self
+                .iter::<Int32ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<Int32ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
+            DataType::Int64 | DataType::Timestamp(TimeUnit::Second) => self
+                .iter::<Int64ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<Int64ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
+            DataType::UInt8 => self
+                .iter::<UInt8ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<UInt8ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
+            DataType::UInt32 => self
+                .iter::<UInt32ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<UInt32ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
+            DataType::Float64 => self
+                .iter::<Float64ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<Float64ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
+            DataType::Utf8 => self
+                .iter::<Utf8ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<Utf8ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
         }
-        if self.inner.is::<ColumnData<String>>() {
-            if !other.inner.is::<ColumnData<String>>() {
-                return false;
-            }
-            return self.inner.downcast_ref::<ColumnData<String>>().unwrap()
-                == other.inner.downcast_ref::<ColumnData<String>>().unwrap();
+    }
+}
+
+impl From<Arc<dyn Array>> for Column {
+    fn from(array: Arc<dyn Array>) -> Self {
+        let len = array.len();
+        Self {
+            arrays: vec![array],
+            cumlen: vec![0, len],
+            len,
         }
-        if self.inner.is::<ColumnData<NaiveDateTime>>() {
-            if !other.inner.is::<ColumnData<NaiveDateTime>>() {
-                return false;
-            }
-            return self
-                .inner
-                .downcast_ref::<ColumnData<NaiveDateTime>>()
-                .unwrap()
-                == other
-                    .inner
-                    .downcast_ref::<ColumnData<NaiveDateTime>>()
-                    .unwrap();
+    }
+}
+
+pub trait ArrayType {
+    type Array: Array;
+    type Elem;
+}
+
+macro_rules! make_array_type {
+    ($name:ident, $array_ty:ty, $elem_ty:ty) => {
+        pub struct $name<'a> {
+            _marker: PhantomData<&'a u8>,
         }
-        false
+
+        impl<'a> ArrayType for $name<'a> {
+            type Array = $array_ty;
+            type Elem = &'a $elem_ty;
+        }
+    };
+}
+
+make_array_type!(Int32ArrayType, primitive::Array<Int32Type>, i32);
+make_array_type!(Int64ArrayType, primitive::Array<Int64Type>, i64);
+make_array_type!(UInt8ArrayType, primitive::Array<UInt8Type>, u8);
+make_array_type!(UInt32ArrayType, primitive::Array<UInt32Type>, u32);
+make_array_type!(Float64ArrayType, primitive::Array<Float64Type>, f64);
+make_array_type!(Utf8ArrayType, string::Array, str);
+
+#[derive(Debug, PartialEq)]
+pub struct TypeError();
+
+pub struct ViewIter<'a, 'b, A, T: ?Sized> {
+    column: &'a Column,
+    selected: slice::Iter<'b, usize>,
+    _a_marker: PhantomData<A>,
+    _t_marker: PhantomData<T>,
+}
+
+impl<'a, 'b, A, T> ViewIter<'a, 'b, A, T>
+where
+    A: ArrayType<Elem = &'a T>,
+    A::Array: Index<usize, Output = T> + 'static,
+    T: ?Sized + 'static,
+{
+    fn new(column: &'a Column, selected: slice::Iter<'b, usize>) -> Self {
+        Self {
+            column,
+            selected,
+            _a_marker: PhantomData,
+            _t_marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, 'b, A, T> Iterator for ViewIter<'a, 'b, A, T>
+where
+    A: ArrayType<Elem = &'a T>,
+    A::Array: Index<usize, Output = T> + 'static,
+    T: ?Sized + 'static,
+{
+    type Item = A::Elem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let selected = if let Some(selected) = self.selected.next() {
+            selected
+        } else {
+            return None;
+        };
+        if let Ok(elem) = self.column.try_get::<A, T>(*selected) {
+            elem
+        } else {
+            None
+        }
     }
 }
 
@@ -744,31 +808,29 @@ impl Description {
     }
 }
 
-#[allow(clippy::ptr_arg)]
-fn count_sort<'a, T: Clone + Eq + Hash>(
-    rows: &[usize],
-    cd: &'a ColumnData<T>,
-) -> Vec<(&'a T, usize)> {
-    let mut count: HashMap<&'a T, usize> = HashMap::new();
-    let mut top_n: Vec<(&'a T, usize)> = Vec::new();
-    for r in rows {
-        let c = count.entry(&cd[*r]).or_insert(0);
+fn count_sort<I>(iter: I) -> Vec<(I::Item, usize)>
+where
+    I: Iterator,
+    I::Item: Clone + Eq + Hash,
+{
+    let mut count: HashMap<I::Item, usize> = HashMap::new();
+    for v in iter {
+        let c = count.entry(v).or_insert(0);
         *c += 1;
     }
+    let mut top_n: Vec<(I::Item, usize)> = Vec::new();
     for (k, v) in &count {
-        top_n.push((*k, *v));
+        top_n.push(((*k).clone(), *v));
     }
     top_n.sort_unstable_by(|a, b| b.1.cmp(&a.1));
     top_n
 }
 
-#[allow(clippy::ptr_arg)]
-fn describe_top_n_f64(
-    rows: &[usize],
-    cd: &ColumnData<f64>,
-    min: f64,
-    max: f64,
-) -> (usize, Vec<(DescriptionElement, usize)>) {
+fn describe_top_n_f64<I>(iter: I, min: f64, max: f64) -> (usize, Vec<(DescriptionElement, usize)>)
+where
+    I: Iterator,
+    I::Item: Deref<Target = f64>,
+{
     let interval: f64 = (max - min) / NUM_OF_FLOAT_INTERVALS.to_f64().expect("<= 100");
     let mut count: Vec<(usize, usize)> = vec![(0, 0); NUM_OF_FLOAT_INTERVALS];
 
@@ -776,11 +838,8 @@ fn describe_top_n_f64(
         item.0 = i;
     }
 
-    for r in rows {
-        let mut slot = ((cd[*r] - min) / interval)
-            .floor()
-            .to_usize()
-            .expect("< 100");
+    for v in iter {
+        let mut slot = ((*v - min) / interval).floor().to_usize().expect("< 100");
         if slot == NUM_OF_FLOAT_INTERVALS {
             slot = NUM_OF_FLOAT_INTERVALS - 1;
         }
@@ -814,63 +873,52 @@ fn describe_top_n_f64(
     (count.len(), top_n)
 }
 
-#[allow(clippy::ptr_arg)]
-fn find_min_max<T: PartialOrd + Clone>(rows: &[usize], cd: &ColumnData<T>) -> (T, T) {
-    let mut min = cd[rows[0]].clone();
-    let mut max = cd[rows[0]].clone();
+struct MinMax<T> {
+    min: T,
+    max: T,
+}
 
-    for r in rows {
-        let data = &cd[*r];
-        if min > *data {
-            min = data.clone();
-        }
-        if max < *data {
-            max = data.clone();
+/// Returns the minimum and maximum values.
+fn find_min_max<I, T>(mut iter: I) -> Option<MinMax<<I::Item as Deref>::Target>>
+where
+    I: Iterator,
+    I::Item: Deref<Target = T>,
+    T: PartialOrd + Clone,
+{
+    let mut min = if let Some(first) = iter.next() {
+        (*first).clone()
+    } else {
+        return None;
+    };
+    let mut max = min.clone();
+
+    for v in iter {
+        if min > *v {
+            min = (*v).clone();
+        } else if max < *v {
+            max = (*v).clone();
         }
     }
-    (min, max)
+    Some(MinMax { min, max })
 }
-
-macro_rules! column_from {
-    ( $t:ty ) => {
-        impl From<Vec<$t>> for Column {
-            fn from(v: Vec<$t>) -> Self {
-                Self { inner: Box::new(v) }
-            }
-        }
-    };
-}
-
-column_from!(i64);
-column_from!(f64);
-column_from!(u32);
-column_from!(String);
-column_from!(NaiveDateTime);
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Column;
-    use chrono::{NaiveDate, NaiveDateTime};
+    use chrono::NaiveDate;
     use std::convert::TryFrom;
     use std::net::Ipv4Addr;
 
     #[test]
-    fn debug_column() {
-        let col = Column::with_data(vec![64_i64]);
-        assert_eq!(format!("{:?}", col), "[64]");
+    fn column_new() {
+        let column = Column::new::<UInt32ArrayType>();
+        assert_eq!(column.len(), 0);
+        assert_eq!(column.try_get::<UInt32ArrayType, u32>(0), Ok(None));
 
-        let col = Column::with_data(vec![32_u32]);
-        assert_eq!(format!("{:?}", col), "[32]");
-
-        let col = Column::with_data(vec![64_f64]);
-        assert_eq!(format!("{:?}", col), "[64.0]");
-
-        let col = Column::with_data(vec!["string".to_string()]);
-        assert_eq!(format!("{:?}", col), r#"["string"]"#);
-
-        let col = Column::with_data(vec![NaiveDateTime::from_timestamp(999, 0)]);
-        assert_eq!(format!("{:?}", col), "[1970-01-01T00:16:39]");
+        let column = Column::new::<Utf8ArrayType>();
+        assert_eq!(column.len(), 0);
+        assert_eq!(column.try_get::<Utf8ArrayType, str>(0), Ok(None));
     }
 
     fn reverse_enum_maps(
@@ -903,15 +951,7 @@ mod tests {
     #[test]
     fn description_test() {
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
-        let c1_v: Vec<String> = vec![
-            "111a qwer".to_string(),
-            "b".to_string(),
-            "c".to_string(),
-            "d".to_string(),
-            "b".to_string(),
-            "111a qwer".to_string(),
-            "111a qwer".to_string(),
-        ];
+        let c1_v: Vec<_> = vec!["111a qwer", "b", "c", "d", "b", "111a qwer", "111a qwer"];
         let c2_v: Vec<u32> = vec![
             Ipv4Addr::new(127, 0, 0, 1).into(),
             Ipv4Addr::new(127, 0, 0, 2).into(),
@@ -947,12 +987,13 @@ mod tests {
         ];
         let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
 
-        let c0 = Column::from(c0_v);
-        let c1 = Column::from(c1_v);
-        let c2 = Column::from(c2_v);
-        let c3 = Column::from(c3_v);
-        let c4 = Column::from(c4_v);
-        let c5 = Column::from(c5_v);
+        let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
+        let c1_a: Arc<dyn Array> = Arc::new(string::Array::try_from(c1_v.as_slice()).unwrap());
+        let c1 = Column::from(c1_a);
+        let c2 = Column::try_from_slice::<UInt32Type>(&c2_v).unwrap();
+        let c3 = Column::try_from_slice::<Float64Type>(&c3_v).unwrap();
+        let c4 = Column::try_from_slice::<Int64Type>(&c4_v).unwrap();
+        let c5 = Column::try_from_slice::<UInt32Type>(&c5_v).unwrap();
         let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
         let table = Table::try_from(c_v).expect("invalid columns");
         let column_types = Arc::new(vec![
