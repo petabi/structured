@@ -48,29 +48,18 @@ pub fn records_to_columns(
             FieldParser::Dict => {
                 Column::with_data(records.iter_mut().fold(vec![], |mut col, v| {
                     let val: String = v.next().unwrap().iter().map(|&c| c as char).collect();
-                    let enum_value = if let Some(map) = labels.get(&fid) {
-                        map.get_mut(&val).map_or_else(
-                            || {
-                                map.insert(
-                                    val,
-                                    (
-                                        (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
-                                        1_usize, // count starts with 1
-                                    ),
+                    col.push(labels.get(&fid).map_or_else(u32::max_value, |map| {
+                        map.entry(val)
+                            .and_modify(|v| *v = (v.0, v.1 + 1))
+                            .or_insert_with(|| {
+                                (
+                                    (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
+                                    1_usize,
                                 )
-                                .unwrap_or((u32::max_value(), 0))
-                                .0
-                            },
-                            |mut v| {
-                                *v = (v.0, v.1 + 1); // add count
-                                v.0
-                            },
-                        )
+                            })
+                            .0
+                    }));
                     // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
-                    } else {
-                        u32::max_value()
-                    };
-                    col.push(enum_value);
                     col
                 }))
             }
