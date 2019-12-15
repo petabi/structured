@@ -133,3 +133,15 @@ impl<T: PrimitiveType> super::Builder for Builder<T> {
         Arc::new(self.into_array())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::datatypes::Int64Type;
+
+    #[test]
+    fn array_debug() {
+        let array = Builder::<Int64Type>::with_capacity(1).unwrap().into_array();
+        assert_eq!(format!("{:?}", array), "PrimitiveArray<Int64>[]");
+    }
+}

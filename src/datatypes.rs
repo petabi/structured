@@ -289,10 +289,28 @@ mod tests {
             r#"{"fields":[{"type":{"name":"utf8"}}],"metadata":{"Key":"Value"}}"#
         );
 
+        let schema = Schema::new(vec![Field::new(DataType::Int32)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"int","bitWidth":32,"isSigned":true}}],"metadata":{}}"#
+        );
+
         let schema = Schema::new(vec![Field::new(DataType::Int64)]);
         assert_eq!(
             serde_json::to_string(&schema).unwrap(),
             r#"{"fields":[{"type":{"name":"int","bitWidth":64,"isSigned":true}}],"metadata":{}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::UInt8)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"int","bitWidth":8,"isSigned":false}}],"metadata":{}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::UInt32)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"int","bitWidth":32,"isSigned":false}}],"metadata":{}}"#
         );
 
         let schema = Schema::new(vec![Field::new(DataType::Float64)]);
@@ -305,12 +323,6 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&schema).unwrap(),
             r#"{"fields":[{"type":{"name":"timestamp","unit":"SECOND"}}],"metadata":{}}"#
-        );
-
-        let schema = Schema::new(vec![Field::new(DataType::UInt32)]);
-        assert_eq!(
-            serde_json::to_string(&schema).unwrap(),
-            r#"{"fields":[{"type":{"name":"int","bitWidth":32,"isSigned":false}}],"metadata":{}}"#
         );
     }
 }
