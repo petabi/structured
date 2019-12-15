@@ -911,6 +911,19 @@ mod tests {
     use std::net::Ipv4Addr;
 
     #[test]
+    fn table_new() {
+        let table = Table::new(Vec::new(), HashMap::new());
+        assert_eq!(table.num_columns(), 0);
+        assert_eq!(table.num_rows(), 0);
+    }
+
+    #[test]
+    fn table_try_from() {
+        let table = Table::try_from(Vec::new());
+        assert!(table.is_ok());
+    }
+
+    #[test]
     fn column_new() {
         let column = Column::new::<UInt32ArrayType>();
         assert_eq!(column.len(), 0);
