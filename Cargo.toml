@@ -10,7 +10,7 @@ edition = "2018"
 
 [dependencies]
 chrono = { version = "0.4.9", features = ["serde"] }
-csv = "1"
+csv-core = "0.1"
 dashmap = "1"
 itertools = "0.8"
 num-traits = "0.2"

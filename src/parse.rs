@@ -1,8 +1,7 @@
 use crate::array::{string, Builder, PrimitiveBuilder};
-use crate::csv::{reader::*, FieldParser};
+use crate::csv::{reader::*, FieldParser, Record};
 use crate::datatypes::*;
 use crate::Column;
-use csv::ByteRecord;
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
@@ -10,32 +9,33 @@ use std::sync::Arc;
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 
 pub fn records_to_columns(
-    values: &[ByteRecord],
+    values: &[&[u8]],
     parsers: &[FieldParser],
     labels: &ConcurrentEnumMaps,
 ) -> Result<Vec<Column>, string::Error> {
+    let values = Record::from_data(values);
     let mut batch = Vec::with_capacity(parsers.len());
     for (i, parser) in parsers.iter().enumerate() {
         let col = match parser {
             FieldParser::Int64(parse) | FieldParser::Timestamp(parse) => {
-                build_primitive_array::<Int64Type, Int64Parser>(values, i, parse)?
+                build_primitive_array::<Int64Type, Int64Parser>(&values, i, parse)?
             }
             FieldParser::Float64(parse) => {
-                build_primitive_array::<Float64Type, Float64Parser>(values, i, parse)?
+                build_primitive_array::<Float64Type, Float64Parser>(&values, i, parse)?
             }
             FieldParser::Utf8 => {
                 let mut builder = string::Builder::with_capacity(values.len())?;
-                for row in values {
+                for row in &values {
                     builder.try_push(std::str::from_utf8(row.get(i).unwrap_or_default())?)?;
                 }
                 builder.build()
             }
             FieldParser::UInt32(parse) => {
-                build_primitive_array::<UInt32Type, UInt32Parser>(values, i, parse)?
+                build_primitive_array::<UInt32Type, UInt32Parser>(&values, i, parse)?
             }
             FieldParser::Dict => {
                 let mut builder = PrimitiveBuilder::<UInt32Type>::with_capacity(values.len())?;
-                for r in values {
+                for r in &values {
                     let key = std::str::from_utf8(r.get(i).unwrap_or_default())?;
                     let value = labels.get(&i).map_or_else(u32::max_value, |map| {
                         let enum_value = map
@@ -87,7 +87,7 @@ mod tests {
     }
 
     fn get_test_data() -> (
-        Vec<ByteRecord>,
+        Vec<Vec<u8>>,
         HashMap<usize, HashMap<String, (u32, usize)>>,
         Vec<Column>,
     ) {
@@ -119,7 +119,7 @@ mod tests {
         c5_map.insert(2, "t2".to_string());
         c5_map.insert(7, "t3".to_string());
 
-        let mut records = vec![];
+        let mut data = vec![];
         let fmt = "%Y-%m-%d %H:%M:%S";
         for (c0, c1, c2, c3, c4, c5) in izip!(
             c0_v.iter(),
@@ -129,15 +129,21 @@ mod tests {
             c4_v.iter(),
             c5_v.iter()
         ) {
-            let mut row: Vec<String> = vec![];
-            row.push(c0.to_string());
-            row.push(c1.to_string());
-            row.push(c2.to_string());
-            row.push(c3.to_string());
-            row.push(c4.format(fmt).to_string());
-            row.push(c5_map.get(c5).unwrap().to_string());
-            records.push(ByteRecord::from(row));
+            let mut row: Vec<u8> = vec![];
+            row.extend(c0.to_string().into_bytes());
+            row.extend_from_slice(b",");
+            row.extend(c1.to_string().into_bytes());
+            row.extend_from_slice(b",");
+            row.extend(c2.to_string().into_bytes());
+            row.extend_from_slice(b",");
+            row.extend(c3.to_string().into_bytes());
+            row.extend_from_slice(b",");
+            row.extend(c4.format(fmt).to_string().into_bytes());
+            row.extend_from_slice(b",");
+            row.extend(c5_map.get(c5).unwrap().to_string().into_bytes());
+            data.push(row);
         }
+
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
 
@@ -161,7 +167,7 @@ mod tests {
         .unwrap();
         let c5 = Column::try_from_slice::<UInt32Type>(&c5_v).unwrap();
         let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
-        (records, labels, columns)
+        (data, labels, columns)
     }
 
     #[test]
@@ -180,13 +186,11 @@ mod tests {
             }),
             FieldParser::Dict,
         ];
-        let (records, labels, columns) = get_test_data();
-        let result = super::records_to_columns(
-            records.as_slice(),
-            &parsers,
-            &convert_to_conc_enum_maps(&labels),
-        )
-        .unwrap();
+        let (data, labels, columns) = get_test_data();
+        let records: Vec<&[u8]> = data.iter().map(|d| d.as_slice()).collect();
+        let result =
+            super::records_to_columns(&records, &parsers, &convert_to_conc_enum_maps(&labels))
+                .unwrap();
         assert_eq!(result, columns);
     }
 
@@ -195,11 +199,10 @@ mod tests {
         let parsers = [FieldParser::Dict];
         let labels = HashMap::<usize, HashMap<String, (u32, usize)>>::new();
 
-        let row = vec!["1".to_string()];
-        let records = vec![ByteRecord::from(row)];
-
+        let record = "1\n".to_string().into_bytes();
+        let row = vec![record.as_slice()];
         let result = super::records_to_columns(
-            records.as_slice(),
+            row.as_slice(),
             &parsers,
             &convert_to_conc_enum_maps(&labels),
         )
