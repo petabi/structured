@@ -1,10 +1,62 @@
 use crate::array::{Array, Builder, PrimitiveBuilder};
 use crate::datatypes::PrimitiveType;
 use crate::memory::AllocationError;
-use csv::ByteRecord;
+use csv_core::{ReadRecordResult, Reader};
 use std::fmt;
 use std::str::{self, FromStr};
 use std::sync::Arc;
+
+pub struct Record {
+    fields: Vec<u8>,
+    ends: Vec<usize>,
+}
+
+impl Record {
+    pub fn from_data(data: &[&[u8]]) -> Vec<Self> {
+        let mut reader = Reader::new();
+        data.iter()
+            .filter_map(|d| Self::new(&mut reader, d))
+            .collect()
+    }
+
+    pub fn new(reader: &mut Reader, input: &[u8]) -> Option<Self> {
+        let mut fields = Vec::with_capacity(input.len());
+        let mut ends = Vec::with_capacity(input.len());
+        let mut cur = 0;
+        let (mut outlen, mut endlen) = (0, 0);
+        loop {
+            let (res, nin, nout, nend) =
+                reader.read_record(&input[cur..], &mut fields[outlen..], &mut ends[endlen..]);
+            cur += nin;
+            outlen += nout;
+            endlen += nend;
+            match res {
+                ReadRecordResult::InputEmpty => continue,
+                ReadRecordResult::OutputFull => {
+                    fields.resize(std::cmp::max(4, fields.len().checked_mul(2).unwrap()), 0)
+                }
+                ReadRecordResult::OutputEndsFull => {
+                    ends.resize(std::cmp::max(4, ends.len().checked_mul(2).unwrap()), 0)
+                }
+                ReadRecordResult::Record => return Some(Self { fields, ends }),
+                ReadRecordResult::End => return None,
+            }
+        }
+    }
+
+    #[inline]
+    pub fn get(&self, i: usize) -> Option<&[u8]> {
+        let end = match self.ends.get(i) {
+            None => return None,
+            Some(&end) => end,
+        };
+        let start = match i.checked_sub(1).and_then(|i| self.ends.get(i)) {
+            None => 0,
+            Some(&start) => start,
+        };
+        Some(&self.fields[start..end])
+    }
+}
 
 pub struct ParseError {
     inner: Box<dyn std::error::Error>,
@@ -132,7 +184,7 @@ fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
 }
 
 pub(crate) fn build_primitive_array<T, P>(
-    rows: &[ByteRecord],
+    rows: &[Record],
     col_idx: usize,
     parse: &Arc<P>,
 ) -> Result<Arc<dyn Array>, AllocationError>
