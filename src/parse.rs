@@ -1,4 +1,4 @@
-use crate::array::{string, Builder, PrimitiveBuilder};
+use crate::array::{variable, Builder, PrimitiveBuilder, StringBuilder};
 use crate::csv::{reader::*, FieldParser, Record};
 use crate::datatypes::*;
 use crate::Column;
@@ -12,7 +12,7 @@ pub fn records_to_columns(
     values: &[&[u8]],
     parsers: &[FieldParser],
     labels: &ConcurrentEnumMaps,
-) -> Result<Vec<Column>, string::Error> {
+) -> Result<Vec<Column>, variable::Error> {
     let values = Record::from_data(values);
     let mut batch = Vec::with_capacity(parsers.len());
     for (i, parser) in parsers.iter().enumerate() {
@@ -24,7 +24,7 @@ pub fn records_to_columns(
                 build_primitive_array::<Float64Type, Float64Parser>(&values, i, parse)?
             }
             FieldParser::Utf8 => {
-                let mut builder = string::Builder::with_capacity(values.len())?;
+                let mut builder = StringBuilder::with_capacity(values.len())?;
                 for row in &values {
                     builder.try_push(std::str::from_utf8(row.get(i).unwrap_or_default())?)?;
                 }
@@ -64,7 +64,7 @@ pub fn records_to_columns(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::array::{string, Array};
+    use crate::array::{Array, StringArray};
     use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
     use std::collections::HashMap;
@@ -148,7 +148,7 @@ mod tests {
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
 
         let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
-        let c1_a: Arc<dyn Array> = Arc::new(string::Array::try_from(c1_v.as_slice()).unwrap());
+        let c1_a: Arc<dyn Array> = Arc::new(StringArray::try_from(c1_v.as_slice()).unwrap());
         let c1 = Column::from(c1_a);
         let c2 = Column::try_from_slice::<UInt32Type>(
             c2_v.iter()

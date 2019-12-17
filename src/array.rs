@@ -1,10 +1,9 @@
 pub(crate) mod primitive;
-pub(crate) mod string;
+pub(crate) mod variable;
 
 pub use primitive::Array as PrimitiveArray;
 pub use primitive::Builder as PrimitiveBuilder;
-pub use string::Array as StringArray;
-pub use string::ArrayIter as StringArrayIter;
+pub use variable::{StringArray, StringArrayIter, StringBuilder};
 
 use crate::datatypes::*;
 use crate::memory::Buffer;
@@ -13,7 +12,7 @@ use std::fmt;
 use std::sync::Arc;
 
 /// A dynamically-typed array.
-pub trait Array: fmt::Debug {
+pub trait Array: fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     /// Returns the number of elements of this array.
     fn len(&self) -> usize;
