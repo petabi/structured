@@ -38,15 +38,17 @@ pub fn records_to_columns(
                 for r in values {
                     let key = std::str::from_utf8(r.get(i).unwrap_or_default())?;
                     let value = labels.get(&i).map_or_else(u32::max_value, |map| {
-                        map.entry(key.to_string())
-                            .and_modify(|v| *v = (v.0, v.1 + 1))
-                            .or_insert_with(|| {
+                        let enum_value = map
+                            .get_or_insert(
+                                &key.to_string(),
                                 (
                                     (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
-                                    1_usize,
-                                )
-                            })
-                            .0
+                                    0_usize,
+                                ),
+                            )
+                            .0;
+                        map.alter(key, |v| (v.0, v.1 + 1));
+                        enum_value
                         // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
                     });
                     builder.try_push(value)?;
@@ -72,10 +74,10 @@ mod tests {
     pub fn convert_to_conc_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
     ) -> ConcurrentEnumMaps {
-        let c_enum_maps = Arc::new(DashMap::new());
+        let c_enum_maps = Arc::new(DashMap::default());
 
         for (column, map) in enum_maps {
-            let c_map = Arc::new(DashMap::<String, (u32, usize)>::new());
+            let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
             for (data, enum_val) in map {
                 c_map.insert(data.clone(), (enum_val.0, enum_val.1));
             }
