@@ -644,7 +644,7 @@ make_array_type!(Int64ArrayType, primitive::Array<Int64Type>, i64);
 make_array_type!(UInt8ArrayType, primitive::Array<UInt8Type>, u8);
 make_array_type!(UInt32ArrayType, primitive::Array<UInt32Type>, u32);
 make_array_type!(Float64ArrayType, primitive::Array<Float64Type>, f64);
-make_array_type!(Utf8ArrayType, string::Array, str);
+make_array_type!(Utf8ArrayType, StringArray, str);
 
 #[derive(Debug, PartialEq)]
 pub struct TypeError();
@@ -1001,7 +1001,7 @@ mod tests {
         let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
 
         let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
-        let c1_a: Arc<dyn Array> = Arc::new(string::Array::try_from(c1_v.as_slice()).unwrap());
+        let c1_a: Arc<dyn Array> = Arc::new(StringArray::try_from(c1_v.as_slice()).unwrap());
         let c1 = Column::from(c1_a);
         let c2 = Column::try_from_slice::<UInt32Type>(&c2_v).unwrap();
         let c3 = Column::try_from_slice::<Float64Type>(&c3_v).unwrap();

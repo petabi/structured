@@ -14,16 +14,16 @@ use std::sync::Arc;
 use thiserror::Error;
 
 /// An array whose elements are UTF-8 strings.
-pub struct Array {
+pub struct StringArray {
     data: Arc<Data>,
     offsets: RawPtrBox<i32>,
     values: RawPtrBox<u8>,
 }
 
-impl Array {
-    pub fn iter(&self) -> ArrayIter {
+impl StringArray {
+    pub fn iter(&self) -> StringArrayIter {
         let begin = self.offsets.get();
-        ArrayIter {
+        StringArrayIter {
             cur: begin,
             end: unsafe { begin.add(self.data.len) },
             values: self.values.get(),
@@ -32,7 +32,7 @@ impl Array {
     }
 }
 
-impl super::Array for Array {
+impl super::Array for StringArray {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -46,14 +46,14 @@ impl super::Array for Array {
     }
 }
 
-impl fmt::Debug for Array {
+impl fmt::Debug for StringArray {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "StringArray")?;
         f.debug_list().entries(self.iter()).finish()
     }
 }
 
-impl Index<usize> for Array {
+impl Index<usize> for StringArray {
     type Output = str;
 
     /// Returns a reference to an element.
@@ -82,20 +82,20 @@ impl Index<usize> for Array {
     }
 }
 
-impl<'a> IntoIterator for &'a Array {
-    type Item = <ArrayIter<'a> as Iterator>::Item;
-    type IntoIter = ArrayIter<'a>;
+impl<'a> IntoIterator for &'a StringArray {
+    type Item = <StringArrayIter<'a> as Iterator>::Item;
+    type IntoIter = StringArrayIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-impl TryFrom<&[&str]> for Array {
+impl TryFrom<&[&str]> for StringArray {
     type Error = AllocationError;
 
     fn try_from(slice: &[&str]) -> Result<Self, Self::Error> {
-        let mut builder = Builder::with_capacity(slice.len())?;
+        let mut builder = StringBuilder::with_capacity(slice.len())?;
         for s in slice {
             builder.try_push(s)?;
         }
@@ -103,14 +103,14 @@ impl TryFrom<&[&str]> for Array {
     }
 }
 
-pub struct ArrayIter<'a> {
+pub struct StringArrayIter<'a> {
     cur: *const i32,
     end: *const i32,
     values: *const u8,
     _marker: PhantomData<&'a i32>,
 }
 
-impl<'a> Iterator for ArrayIter<'a> {
+impl<'a> Iterator for StringArrayIter<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -135,12 +135,12 @@ impl<'a> Iterator for ArrayIter<'a> {
     }
 }
 
-pub struct Builder {
+pub struct StringBuilder {
     offsets: BufferBuilder<Int32Type>,
     values: BufferBuilder<UInt8Type>,
 }
 
-impl Builder {
+impl StringBuilder {
     pub fn with_capacity(capacity: usize) -> Result<Self, AllocationError> {
         let mut offsets = BufferBuilder::<Int32Type>::with_capacity(capacity)?;
         offsets.try_push(0)?;
@@ -161,7 +161,7 @@ impl Builder {
         Ok(())
     }
 
-    fn into_array(self) -> Array {
+    fn into_array(self) -> StringArray {
         let len = self.offsets.len() - 1;
         let offsets_buffer = self.offsets.build();
         let values_buffer = self.values.build();
@@ -174,7 +174,7 @@ impl Builder {
             buffers,
         });
         #[allow(clippy::cast_ptr_alignment)]
-        Array {
+        StringArray {
             data,
             offsets: RawPtrBox::new(offsets as *const i32),
             values: RawPtrBox::new(values),
@@ -182,7 +182,7 @@ impl Builder {
     }
 }
 
-impl super::Builder for Builder {
+impl super::Builder for StringBuilder {
     fn len(&self) -> usize {
         self.values.len()
     }
@@ -202,7 +202,7 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use super::Array as StringArray;
+    use super::StringArray;
     use crate::array::Array;
     use std::convert::TryInto;
 
