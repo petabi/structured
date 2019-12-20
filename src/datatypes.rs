@@ -57,7 +57,7 @@ impl<'de> Visitor<'de> for DataTypeVisitor {
 
         match props.name {
             Some("utf8") => Ok(DataType::Utf8),
-            Some("bytes") => Ok(DataType::Binary),
+            Some("binary") => Ok(DataType::Binary),
             Some("floatingpoint") => Ok(DataType::Float64),
             Some("int") => match props.is_signed {
                 Some(true) => match props.bit_width {
