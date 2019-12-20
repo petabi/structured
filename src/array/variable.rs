@@ -405,4 +405,24 @@ mod tests {
         }
         assert_eq!(res, values);
     }
+
+    #[test]
+    #[should_panic]
+    fn byte_array_invalid_access() {
+        let values: Vec<&[u8]> = vec![b"hello", b"", b"parquet"];
+        let binary_array: BinaryArray = values.as_slice().try_into().expect("memory error");
+
+        assert_eq!(3, binary_array.len());
+        let _ = binary_array[3];
+    }
+
+    #[test]
+    #[should_panic]
+    fn utf8_array_invalid_access() {
+        let values: Vec<&str> = vec!["hello", "", "parquet"];
+        let string_array: StringArray = values.as_slice().try_into().expect("memory error");
+
+        assert_eq!(3, string_array.len());
+        let _ = string_array[3];
+    }
 }
