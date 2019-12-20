@@ -240,10 +240,12 @@ make_primitive_type!(
 );
 
 impl Field {
+    #[must_use]
     pub fn new(data_type: DataType) -> Self {
         Self { data_type }
     }
 
+    #[must_use]
     pub fn data_type(&self) -> &DataType {
         &self.data_type
     }
@@ -260,21 +262,25 @@ pub struct Schema {
 
 impl Schema {
     /// Creates a new `Schema` from a sequence of `Field` values
+    #[must_use]
     pub fn new(fields: Vec<Field>) -> Self {
         Self::with_metadata(fields, HashMap::new())
     }
 
     /// Creates a new `Schema` from a sequence of `Field` values
     /// and adds additional metadata in form of key value pairs.
+    #[must_use]
     pub fn with_metadata(fields: Vec<Field>, metadata: HashMap<String, String>) -> Self {
         Self { fields, metadata }
     }
 
+    #[must_use]
     pub fn fields(&self) -> &[Field] {
         &self.fields
     }
 
     /// Returns an immutable reference to the Map of custom metadata key-value pairs.
+    #[must_use]
     pub fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
     }

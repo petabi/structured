@@ -86,6 +86,7 @@ impl<'a> IntoIterator for &'a StringArray {
     type Item = <StringArrayIter<'a> as Iterator>::Item;
     type IntoIter = StringArrayIter<'a>;
 
+    #[must_use]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
@@ -245,6 +246,7 @@ impl<'a> IntoIterator for &'a BinaryArray {
     type Item = <BinaryArrayIter<'a> as Iterator>::Item;
     type IntoIter = BinaryArrayIter<'a>;
 
+    #[must_use]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
