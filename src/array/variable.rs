@@ -392,11 +392,17 @@ mod tests {
     #[test]
     fn array_from_byte_slice() {
         let values: Vec<&[u8]> = vec![b"hello", b"", b"parquet"];
-        let bytes_array: BinaryArray = values.as_slice().try_into().expect("memory error");
+        let binary_array: BinaryArray = values.as_slice().try_into().expect("memory error");
 
-        assert_eq!(3, bytes_array.len());
-        assert_eq!(*b"hello", bytes_array[0]);
-        assert_eq!(*b"", bytes_array[1]);
-        assert_eq!(*b"parquet", bytes_array[2]);
+        assert_eq!(3, binary_array.len());
+        assert_eq!(*b"hello", binary_array[0]);
+        assert_eq!(*b"", binary_array[1]);
+        assert_eq!(*b"parquet", binary_array[2]);
+
+        let mut res: Vec<&[u8]> = vec![];
+        for bytes in binary_array.iter() {
+            res.push(bytes);
+        }
+        assert_eq!(res, values);
     }
 }
