@@ -74,6 +74,7 @@ impl<'a, T: PrimitiveType> IntoIterator for &'a Array<T> {
     type Item = <PrimitiveArrayIter<'a, T> as Iterator>::Item;
     type IntoIter = PrimitiveArrayIter<'a, T>;
 
+    #[must_use]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }

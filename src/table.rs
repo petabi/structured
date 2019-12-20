@@ -43,10 +43,12 @@ pub struct Table {
 }
 
 impl Table {
+    #[must_use]
     pub fn new(columns: Vec<Column>, event_ids: HashMap<u64, usize>) -> Self {
         Self { columns, event_ids }
     }
 
+    #[must_use]
     pub fn from_schema(schema: &Schema) -> Self {
         let columns = schema
             .fields()
@@ -80,16 +82,19 @@ impl Table {
     }
 
     /// Returns an `Iterator` for columns.
+    #[must_use]
     pub fn columns(&self) -> slice::Iter<Column> {
         self.columns.iter()
     }
 
     /// Returns the number of columns in the table.
+    #[must_use]
     pub fn num_columns(&self) -> usize {
         self.columns.len()
     }
 
     /// Returns the number of rows in the table.
+    #[must_use]
     pub fn num_rows(&self) -> usize {
         if self.columns.is_empty() {
             0_usize
@@ -99,6 +104,7 @@ impl Table {
         }
     }
 
+    #[must_use]
     pub fn describe(
         &self,
         rows: &[usize],
@@ -121,6 +127,7 @@ impl Table {
             .collect()
     }
 
+    #[must_use]
     pub fn get_index_of_event(&self, eventid: u64) -> Option<&usize> {
         self.event_ids.get(&eventid)
     }
@@ -275,6 +282,7 @@ pub struct Column {
 }
 
 impl Column {
+    #[must_use]
     pub fn new<T>() -> Self
     where
         T: Send + Sync + 'static,
@@ -369,6 +377,7 @@ impl Column {
         Ok(ViewIter::new(self, selected.iter()))
     }
 
+    #[must_use]
     pub fn describe_enum(
         &self,
         rows: &[usize],
@@ -477,6 +486,7 @@ impl Column {
         }
     }
 
+    #[must_use]
     pub fn describe(&self, rows: &[usize], column_type: ColumnType) -> Description {
         let mut desc = Description::default();
 
@@ -565,6 +575,7 @@ impl Column {
 }
 
 impl PartialEq for Column {
+    #[must_use]
     fn eq(&self, other: &Self) -> bool {
         let data_type = match (self.arrays.first(), other.arrays.first()) {
             (Some(x_arr), Some(y_arr)) => {
@@ -622,6 +633,7 @@ impl PartialEq for Column {
 }
 
 impl From<Arc<dyn Array>> for Column {
+    #[must_use]
     fn from(array: Arc<dyn Array>) -> Self {
         let len = array.len();
         Self {
@@ -790,34 +802,42 @@ impl fmt::Display for ColumnType {
 }
 
 impl Description {
+    #[must_use]
     pub fn get_count(&self) -> usize {
         self.count
     }
 
+    #[must_use]
     pub fn get_unique_count(&self) -> usize {
         self.unique_count
     }
 
+    #[must_use]
     pub fn get_mean(&self) -> Option<f64> {
         self.mean
     }
 
+    #[must_use]
     pub fn get_s_deviation(&self) -> Option<f64> {
         self.s_deviation
     }
 
+    #[must_use]
     pub fn get_min(&self) -> Option<&DescriptionElement> {
         self.min.as_ref()
     }
 
+    #[must_use]
     pub fn get_max(&self) -> Option<&DescriptionElement> {
         self.max.as_ref()
     }
 
+    #[must_use]
     pub fn get_top_n(&self) -> Option<&Vec<(DescriptionElement, usize)>> {
         self.top_n.as_ref()
     }
 
+    #[must_use]
     pub fn get_mode(&self) -> Option<&DescriptionElement> {
         self.mode.as_ref()
     }

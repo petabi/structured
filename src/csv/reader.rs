@@ -12,6 +12,7 @@ pub struct Record {
 }
 
 impl Record {
+    #[must_use]
     pub fn from_data(data: &[&[u8]]) -> Vec<Self> {
         let mut reader = Reader::new();
         data.iter()
@@ -19,6 +20,7 @@ impl Record {
             .collect()
     }
 
+    #[must_use]
     pub fn new(reader: &mut Reader, input: &[u8]) -> Option<Self> {
         let mut fields = Vec::with_capacity(input.len());
         let mut ends = Vec::with_capacity(input.len());
@@ -45,6 +47,7 @@ impl Record {
     }
 
     #[inline]
+    #[must_use]
     pub fn get(&self, i: usize) -> Option<&[u8]> {
         let end = match self.ends.get(i) {
             None => return None,
@@ -123,22 +126,27 @@ pub enum FieldParser {
 }
 
 impl FieldParser {
+    #[must_use]
     pub fn int64() -> Self {
         Self::Int64(Arc::new(parse::<i64>))
     }
 
+    #[must_use]
     pub fn uint32() -> Self {
         Self::UInt32(Arc::new(parse::<u32>))
     }
 
+    #[must_use]
     pub fn float64() -> Self {
         Self::Float64(Arc::new(parse::<f64>))
     }
 
+    #[must_use]
     pub fn timestamp() -> Self {
         Self::Int64(Arc::new(parse_timestamp))
     }
 
+    #[must_use]
     pub fn uint32_with_parser<P>(parser: P) -> Self
     where
         P: Fn(&[u8]) -> Result<u32, ParseError> + Send + Sync + 'static,
@@ -146,6 +154,7 @@ impl FieldParser {
         Self::UInt32(Arc::new(parser))
     }
 
+    #[must_use]
     pub fn timestamp_with_parser<P>(parser: P) -> Self
     where
         P: Fn(&[u8]) -> Result<i64, ParseError> + Send + Sync + 'static,
