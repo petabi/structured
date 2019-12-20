@@ -3,6 +3,7 @@ pub(crate) mod variable;
 
 pub use primitive::Array as PrimitiveArray;
 pub use primitive::Builder as PrimitiveBuilder;
+pub use variable::{BinaryArray, BinaryArrayIter, BinaryBuilder};
 pub use variable::{StringArray, StringArrayIter, StringBuilder};
 
 use crate::datatypes::*;

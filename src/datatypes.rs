@@ -18,6 +18,7 @@ pub enum DataType {
     UInt32,
     Float64,
     Utf8,
+    Binary,
     Timestamp(TimeUnit),
 }
 
@@ -56,6 +57,7 @@ impl<'de> Visitor<'de> for DataTypeVisitor {
 
         match props.name {
             Some("utf8") => Ok(DataType::Utf8),
+            Some("bytes") => Ok(DataType::Binary),
             Some("floatingpoint") => Ok(DataType::Float64),
             Some("int") => match props.is_signed {
                 Some(true) => match props.bit_width {
@@ -131,6 +133,11 @@ impl Serialize for DataType {
             Self::Utf8 => {
                 let mut map = serializer.serialize_map(Some(1))?;
                 map.serialize_entry("name", "utf8")?;
+                map.end()
+            }
+            Self::Binary => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("name", "binary")?;
                 map.end()
             }
             Self::Timestamp(_) => {
@@ -283,10 +290,16 @@ mod tests {
             .iter()
             .cloned()
             .collect();
-        let schema = Schema::with_metadata(vec![Field::new(DataType::Utf8)], metadata);
+        let schema = Schema::with_metadata(vec![Field::new(DataType::Utf8)], metadata.clone());
         assert_eq!(
             serde_json::to_string(&schema).unwrap(),
             r#"{"fields":[{"type":{"name":"utf8"}}],"metadata":{"Key":"Value"}}"#
+        );
+
+        let schema = Schema::with_metadata(vec![Field::new(DataType::Binary)], metadata.clone());
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"binary"}}],"metadata":{"Key":"Value"}}"#
         );
 
         let schema = Schema::new(vec![Field::new(DataType::Int32)]);

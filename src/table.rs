@@ -33,6 +33,7 @@ pub enum ColumnType {
     IpAddr,
     Enum,
     Utf8,
+    Binary,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -57,6 +58,7 @@ impl Table {
                 DataType::UInt32 => Column::new::<u32>(),
                 DataType::Float64 => Column::new::<f64>(),
                 DataType::Utf8 => Column::new::<String>(),
+                DataType::Binary => Column::new::<Vec<u8>>(),
             })
             .collect();
         Self {
@@ -521,6 +523,10 @@ impl Column {
                 let iter = self.view_iter::<Utf8ArrayType, str>(rows).unwrap();
                 describe_top_n!(iter, self.len(), desc, str, DescriptionElement::Text);
             }
+            ColumnType::Binary => {
+                let iter = self.view_iter::<BinaryArrayType, [u8]>(rows).unwrap();
+                describe_top_n!(iter, self.len(), desc, [u8], DescriptionElement::Binary);
+            }
             ColumnType::IpAddr => {
                 let values = self
                     .view_iter::<UInt32ArrayType, u32>(rows)
@@ -606,6 +612,11 @@ impl PartialEq for Column {
                 .expect("invalid array")
                 .zip(other.iter::<Utf8ArrayType>().expect("invalid array"))
                 .all(|(x, y)| x == y),
+            DataType::Binary => self
+                .iter::<BinaryArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<BinaryArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
         }
     }
 }
@@ -645,6 +656,7 @@ make_array_type!(UInt8ArrayType, primitive::Array<UInt8Type>, u8);
 make_array_type!(UInt32ArrayType, primitive::Array<UInt32Type>, u32);
 make_array_type!(Float64ArrayType, primitive::Array<Float64Type>, f64);
 make_array_type!(Utf8ArrayType, StringArray, str);
+make_array_type!(BinaryArrayType, BinaryArray, [u8]);
 
 #[derive(Debug, PartialEq)]
 pub struct TypeError();
@@ -702,6 +714,7 @@ pub enum DescriptionElement {
     Float(f64),
     FloatRange(f64, f64),
     Text(String),
+    Binary(Vec<u8>),
     IpAddr(IpAddr),
     DateTime(NaiveDateTime),
 }
@@ -712,6 +725,7 @@ impl fmt::Display for DescriptionElement {
             Self::Int(x) => write!(f, "{}", x),
             Self::UInt(x) => write!(f, "{}", x),
             Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
+            Self::Binary(x) => write!(f, "{:#?}", x),
             Self::Float(x) => write!(f, "{}", x),
             Self::FloatRange(x, y) => write!(f, "({} - {})", x, y),
             Self::IpAddr(x) => write!(f, "{}", x),
@@ -767,6 +781,7 @@ impl fmt::Display for ColumnType {
             Self::Float64 => "Float64",
             Self::Enum => "Enum",
             Self::Utf8 => "Utf8",
+            Self::Binary => "Binary",
             Self::IpAddr => "IpAddr",
             Self::DateTime => "DateTime",
         };
@@ -999,6 +1014,15 @@ mod tests {
                 .timestamp(),
         ];
         let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
+        let c6_v: Vec<&[u8]> = vec![
+            b"111a qwer",
+            b"b",
+            b"c",
+            b"d",
+            b"b",
+            b"111a qwer",
+            b"111a qwer",
+        ];
 
         let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
         let c1_a: Arc<dyn Array> = Arc::new(StringArray::try_from(c1_v.as_slice()).unwrap());
@@ -1007,7 +1031,9 @@ mod tests {
         let c3 = Column::try_from_slice::<Float64Type>(&c3_v).unwrap();
         let c4 = Column::try_from_slice::<Int64Type>(&c4_v).unwrap();
         let c5 = Column::try_from_slice::<UInt32Type>(&c5_v).unwrap();
-        let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
+        let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::try_from(c6_v.as_slice()).unwrap());
+        let c6 = Column::from(c6_a);
+        let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
         let table = Table::try_from(c_v).expect("invalid columns");
         let column_types = Arc::new(vec![
             ColumnType::Int64,
@@ -1016,6 +1042,7 @@ mod tests {
             ColumnType::Float64,
             ColumnType::DateTime,
             ColumnType::Enum,
+            ColumnType::Binary,
         ]);
         let rows = vec![0_usize, 3, 1, 4, 2, 6, 5];
         let ds = table.describe(&rows, &column_types, &reverse_enum_maps(&HashMap::new()));
@@ -1035,6 +1062,10 @@ mod tests {
             ds[4].get_top_n().unwrap()[0].0
         );
         assert_eq!(3, ds[5].unique_count);
+        assert_eq!(
+            DescriptionElement::Binary(b"111a qwer".to_vec()),
+            *ds[6].get_mode().unwrap()
+        );
 
         let mut c5_map: HashMap<u32, String> = HashMap::new();
         c5_map.insert(1, "t1".to_string());
@@ -1061,6 +1092,10 @@ mod tests {
         assert_eq!(
             DescriptionElement::Enum("t2".to_string()),
             *ds[5].get_mode().unwrap()
+        );
+        assert_eq!(
+            DescriptionElement::Binary(b"111a qwer".to_vec()),
+            *ds[6].get_mode().unwrap()
         );
     }
 }
