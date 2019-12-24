@@ -15,6 +15,10 @@ use std::sync::Arc;
 /// A dynamically-typed array.
 pub trait Array: fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
+    #[must_use]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     /// Returns the number of elements of this array.
     fn len(&self) -> usize;
     fn data(&self) -> &Data;
