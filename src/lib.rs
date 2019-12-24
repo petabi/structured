@@ -7,7 +7,10 @@ mod parse;
 mod table;
 pub(crate) mod util;
 
-pub use datatypes::{DataType, Field, Schema, TimeUnit};
+pub use datatypes::{
+    DataType, Field, Float64Type, Int32Type, Int64Type, Schema, TimeUnit, TimestampSecondType,
+    UInt32Type, UInt8Type,
+};
 pub use parse::records_to_columns;
 pub use table::{
     BinaryArrayType, Column, ColumnType, Description, DescriptionElement, Float64ArrayType,
