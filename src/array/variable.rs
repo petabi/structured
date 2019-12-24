@@ -21,6 +21,7 @@ pub struct StringArray {
 }
 
 impl StringArray {
+    #[must_use]
     pub fn iter(&self) -> StringArrayIter {
         let begin = self.offsets.get();
         StringArrayIter {
@@ -33,14 +34,17 @@ impl StringArray {
 }
 
 impl super::Array for StringArray {
+    #[must_use]
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    #[must_use]
     fn len(&self) -> usize {
         self.data.len
     }
 
+    #[must_use]
     fn data(&self) -> &Data {
         &self.data
     }
@@ -61,6 +65,7 @@ impl Index<usize> for StringArray {
     /// # Panics
     ///
     /// Panics if `index` is out of bound.
+    #[must_use]
     fn index(&self, index: usize) -> &Self::Output {
         if index >= self.len() {
             panic!("index out of bound");
@@ -200,6 +205,7 @@ pub struct BinaryArray {
 }
 
 impl BinaryArray {
+    #[must_use]
     pub fn iter(&self) -> BinaryArrayIter {
         let begin = self.offsets.get();
         BinaryArrayIter {
@@ -226,6 +232,7 @@ impl Index<usize> for BinaryArray {
     /// # Panics
     ///
     /// Panics if `index` is out of bound.
+    #[must_use]
     fn index(&self, index: usize) -> &Self::Output {
         if index >= self.len() {
             panic!("index out of bound");
@@ -265,14 +272,17 @@ impl TryFrom<&[&[u8]]> for BinaryArray {
 }
 
 impl super::Array for BinaryArray {
+    #[must_use]
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    #[must_use]
     fn len(&self) -> usize {
         self.data.len
     }
 
+    #[must_use]
     fn data(&self) -> &Data {
         &self.data
     }
