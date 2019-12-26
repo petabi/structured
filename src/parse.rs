@@ -1,4 +1,4 @@
-use crate::array::{variable, Builder, PrimitiveBuilder, StringBuilder};
+use crate::array::{variable, BinaryBuilder, Builder, PrimitiveBuilder, StringBuilder};
 use crate::csv::{reader::*, FieldParser, Record};
 use crate::datatypes::*;
 use crate::Column;
@@ -27,6 +27,13 @@ pub fn records_to_columns(
                 let mut builder = StringBuilder::with_capacity(values.len())?;
                 for row in &values {
                     builder.try_push(std::str::from_utf8(row.get(i).unwrap_or_default())?)?;
+                }
+                builder.build()
+            }
+            FieldParser::Binary => {
+                let mut builder = BinaryBuilder::with_capacity(values.len())?;
+                for row in &values {
+                    builder.try_push(row.get(i).unwrap_or_default())?;
                 }
                 builder.build()
             }
@@ -64,7 +71,7 @@ pub fn records_to_columns(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::array::{Array, StringArray};
+    use crate::array::{Array, BinaryArray, StringArray};
     use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
     use std::collections::HashMap;
@@ -113,6 +120,15 @@ mod tests {
             NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
         ];
         let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
+        let c6_v: Vec<&[u8]> = vec![
+            b"111a qwer",
+            b"b",
+            b"c",
+            b"d",
+            b"b",
+            b"111a qwer",
+            b"111a qwer",
+        ];
 
         let mut c5_map: HashMap<u32, String> = HashMap::new();
         c5_map.insert(1, "t1".to_string());
@@ -121,13 +137,14 @@ mod tests {
 
         let mut data = vec![];
         let fmt = "%Y-%m-%d %H:%M:%S";
-        for (c0, c1, c2, c3, c4, c5) in izip!(
+        for (c0, c1, c2, c3, c4, c5, c6) in izip!(
             c0_v.iter(),
             c1_v.iter(),
             c2_v.iter(),
             c3_v.iter(),
             c4_v.iter(),
-            c5_v.iter()
+            c5_v.iter(),
+            c6_v.iter()
         ) {
             let mut row: Vec<u8> = vec![];
             row.extend(c0.to_string().into_bytes());
@@ -141,6 +158,8 @@ mod tests {
             row.extend(c4.format(fmt).to_string().into_bytes());
             row.extend_from_slice(b",");
             row.extend(c5_map.get(c5).unwrap().to_string().into_bytes());
+            row.extend_from_slice(b",");
+            row.extend_from_slice(c6);
             data.push(row);
         }
 
@@ -166,7 +185,9 @@ mod tests {
         )
         .unwrap();
         let c5 = Column::try_from_slice::<UInt32Type>(&c5_v).unwrap();
-        let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5];
+        let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::try_from(c6_v.as_slice()).unwrap());
+        let c6 = Column::from(c6_a);
+        let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
         (data, labels, columns)
     }
 
@@ -185,6 +206,7 @@ mod tests {
                 Ok(NaiveDateTime::parse_from_str(&val, "%Y-%m-%d %H:%M:%S")?.timestamp())
             }),
             FieldParser::Dict,
+            FieldParser::Binary,
         ];
         let (data, labels, columns) = get_test_data();
         let records: Vec<&[u8]> = data.iter().map(|d| d.as_slice()).collect();

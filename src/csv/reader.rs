@@ -121,6 +121,7 @@ pub enum FieldParser {
     UInt32(Arc<UInt32Parser>),
     Float64(Arc<Float64Parser>),
     Utf8,
+    Binary,
     Timestamp(Arc<Int64Parser>),
     Dict,
 }
@@ -170,6 +171,7 @@ impl<'a> fmt::Debug for FieldParser {
             Self::UInt32(_) => write!(f, "UInt32"),
             Self::Float64(_) => write!(f, "Float64"),
             Self::Utf8 => write!(f, "Utf8"),
+            Self::Binary => write!(f, "Binary"),
             Self::Timestamp(_) => write!(f, "Timestamp"),
             Self::Dict => write!(f, "Dict"),
         }
