@@ -25,7 +25,7 @@ const NUM_OF_TOP_N: usize = 30;
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
 
-#[derive(Clone, Copy, Debug)] // same as remake::csv::ColumnType
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)] // same as remake::csv::ColumnType
 pub enum ColumnType {
     Int64,
     Float64,
