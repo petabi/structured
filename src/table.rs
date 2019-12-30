@@ -25,7 +25,7 @@ const NUM_OF_TOP_N: usize = 30;
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)] // same as remake::csv::ColumnType
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum ColumnType {
     Int64,
     Float64,
@@ -34,6 +34,20 @@ pub enum ColumnType {
     Enum,
     Utf8,
     Binary,
+}
+
+impl Into<DataType> for ColumnType {
+    #[must_use]
+    fn into(self) -> DataType {
+        match self {
+            Self::Int64 => DataType::Int64,
+            Self::Float64 => DataType::Float64,
+            Self::DateTime => DataType::Timestamp(TimeUnit::Second),
+            Self::Enum | Self::IpAddr => DataType::UInt32,
+            Self::Utf8 => DataType::Utf8,
+            Self::Binary => DataType::Binary,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone)]
