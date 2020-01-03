@@ -1,8 +1,11 @@
 use crate::array::{Array, Builder, PrimitiveBuilder};
-use crate::datatypes::PrimitiveType;
+use crate::datatypes::{DataType, PrimitiveType};
 use crate::memory::AllocationError;
 use csv_core::{ReadRecordResult, Reader};
 use std::fmt;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
+use std::path::Path;
 use std::str::{self, FromStr};
 use std::sync::Arc;
 
@@ -40,7 +43,46 @@ impl Record {
                 ReadRecordResult::OutputEndsFull => {
                     ends.resize(std::cmp::max(4, ends.len().checked_mul(2).unwrap()), 0)
                 }
-                ReadRecordResult::Record => return Some(Self { fields, ends }),
+                ReadRecordResult::Record => {
+                    unsafe {
+                        fields.set_len(outlen);
+                        ends.set_len(endlen);
+                    }
+                    return Some(Self { fields, ends });
+                }
+                ReadRecordResult::End => return None,
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn from_buf(reader: &mut Reader, input: &mut dyn BufRead) -> Option<Self> {
+        let mut fields = Vec::with_capacity(1024);
+        let mut ends = Vec::with_capacity(1024);
+        let (mut outlen, mut endlen) = (0, 0);
+        loop {
+            let (res, nin, nout, nend) = {
+                let buf = input.fill_buf().expect("file reading error");
+                reader.read_record(buf, &mut fields[outlen..], &mut ends[endlen..])
+            };
+            input.consume(nin);
+            outlen += nout;
+            endlen += nend;
+            match res {
+                ReadRecordResult::InputEmpty => continue,
+                ReadRecordResult::OutputFull => {
+                    fields.resize(std::cmp::max(4, fields.len().checked_mul(2).unwrap()), 0)
+                }
+                ReadRecordResult::OutputEndsFull => {
+                    ends.resize(std::cmp::max(4, ends.len().checked_mul(2).unwrap()), 0)
+                }
+                ReadRecordResult::Record => {
+                    unsafe {
+                        fields.set_len(outlen);
+                        ends.set_len(endlen);
+                    }
+                    return Some(Self { fields, ends });
+                }
                 ReadRecordResult::End => return None,
             }
         }
@@ -59,6 +101,45 @@ impl Record {
         };
         Some(&self.fields[start..end])
     }
+
+    #[must_use]
+    pub fn guess_data_types(&self) -> Vec<DataType> {
+        let mut result = vec![];
+        for (i, &end) in self.ends.iter().enumerate() {
+            let start = match i.checked_sub(1).and_then(|i| self.ends.get(i)) {
+                None => 0,
+                Some(&start) => start,
+            };
+            let field = if let Ok(field) = std::str::from_utf8(&self.fields[start..end]) {
+                field
+            } else {
+                result.push(DataType::Binary);
+                continue;
+            };
+            let cd = if field.parse::<i64>().is_ok() {
+                DataType::Int64
+            } else if field.parse::<f64>().is_ok() {
+                DataType::Float64
+            } else {
+                DataType::Utf8
+            };
+            result.push(cd);
+        }
+        result
+    }
+}
+
+pub fn guess_data_types(input: &Path) -> io::Result<Vec<DataType>> {
+    let mut input = BufReader::new(File::open(input)?);
+    let mut reader = Reader::new();
+
+    let sample = Record::from_buf(&mut reader, &mut input).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            "fail to extract data type from sample.",
+        )
+    })?;
+    Ok(sample.guess_data_types())
 }
 
 pub struct ParseError {
@@ -215,4 +296,26 @@ where
         }
     }
     Ok(builder.build())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_to_datatypes() {
+        let buf = "Cat,50,1.0,1990-11-28T12:00:09.0-07:00\n".as_bytes();
+        let mut input = BufReader::new(buf);
+        let mut reader = Reader::new();
+        let record = Record::from_buf(&mut reader, &mut input).unwrap();
+        let types: Vec<DataType> = record.guess_data_types();
+        let answers = vec![
+            DataType::Utf8,
+            DataType::Int64,
+            DataType::Float64,
+            DataType::Utf8,
+        ];
+
+        assert_eq!(types, answers);
+    }
 }
