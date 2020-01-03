@@ -23,6 +23,10 @@ impl Record {
             .collect()
     }
 
+    /// # Panics
+    ///
+    /// Panics if `input.len() * 2` overflows `usize`.
+    ///
     #[must_use]
     pub fn new(reader: &mut Reader, input: &[u8]) -> Option<Self> {
         let mut fields = Vec::with_capacity(input.len());
@@ -55,6 +59,10 @@ impl Record {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if line length in input * 2 overflows `usize`.
+    ///
     #[must_use]
     pub fn from_buf(reader: &mut Reader, input: &mut dyn BufRead) -> Option<Self> {
         let mut fields = Vec::with_capacity(1024);
