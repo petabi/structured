@@ -1,10 +1,10 @@
 use crate::array::{Array, Builder, PrimitiveBuilder};
-use crate::datatypes::{DataType, PrimitiveType};
+use crate::datatypes::{DataType, Field, PrimitiveType, Schema};
 use crate::memory::AllocationError;
-use csv_core::{ReadRecordResult, Reader};
+use csv_core::ReadRecordResult;
 use std::fmt;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::Path;
 use std::str::{self, FromStr};
 use std::sync::Arc;
@@ -17,7 +17,7 @@ pub struct Record {
 impl Record {
     #[must_use]
     pub fn from_data(data: &[&[u8]]) -> Vec<Self> {
-        let mut reader = Reader::new();
+        let mut reader = csv_core::Reader::new();
         data.iter()
             .filter_map(|d| Self::new(&mut reader, d))
             .collect()
@@ -28,7 +28,7 @@ impl Record {
     /// Panics if `input.len() * 2` overflows `usize`.
     ///
     #[must_use]
-    pub fn new(reader: &mut Reader, input: &[u8]) -> Option<Self> {
+    pub fn new(reader: &mut csv_core::Reader, input: &[u8]) -> Option<Self> {
         let mut fields = Vec::with_capacity(input.len());
         let mut ends = Vec::with_capacity(input.len());
         let mut cur = 0;
@@ -64,7 +64,7 @@ impl Record {
     /// Panics if line length in input * 2 overflows `usize`.
     ///
     #[must_use]
-    pub fn from_buf(reader: &mut Reader, input: &mut dyn BufRead) -> Option<Self> {
+    pub fn from_buf(reader: &mut csv_core::Reader, input: &mut dyn BufRead) -> Option<Self> {
         let mut fields = Vec::with_capacity(1024);
         let mut ends = Vec::with_capacity(1024);
         let (mut outlen, mut endlen) = (0, 0);
@@ -111,7 +111,7 @@ impl Record {
     }
 
     #[must_use]
-    pub fn guess_data_types(&self) -> Vec<DataType> {
+    fn guess_data_types(&self) -> Vec<Field> {
         let mut result = vec![];
         for (i, &end) in self.ends.iter().enumerate() {
             let start = match i.checked_sub(1).and_then(|i| self.ends.get(i)) {
@@ -121,33 +121,24 @@ impl Record {
             let field = if let Ok(field) = std::str::from_utf8(&self.fields[start..end]) {
                 field
             } else {
-                result.push(DataType::Binary);
+                result.push(Field::new(DataType::Binary));
                 continue;
             };
-            let cd = if field.parse::<i64>().is_ok() {
-                DataType::Int64
+            result.push(if field.parse::<i64>().is_ok() {
+                Field::new(DataType::Int64)
             } else if field.parse::<f64>().is_ok() {
-                DataType::Float64
+                Field::new(DataType::Float64)
             } else {
-                DataType::Utf8
-            };
-            result.push(cd);
+                Field::new(DataType::Utf8)
+            });
         }
         result
     }
 }
 
-pub fn guess_data_types(input: &Path) -> io::Result<Vec<DataType>> {
+pub fn guess_data_types(input: &Path) -> io::Result<Schema> {
     let mut input = BufReader::new(File::open(input)?);
-    let mut reader = Reader::new();
-
-    let sample = Record::from_buf(&mut reader, &mut input).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            "fail to extract data type from sample.",
-        )
-    })?;
-    Ok(sample.guess_data_types())
+    infer_schema(&mut input).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
 }
 
 pub struct ParseError {
@@ -306,6 +297,13 @@ where
     Ok(builder.build())
 }
 
+pub fn infer_schema<R: Read>(reader: &mut BufReader<R>) -> Result<Schema, String> {
+    let mut csv_reader = csv_core::Reader::new();
+    let sample = Record::from_buf(&mut csv_reader, reader)
+        .ok_or("fail to extract data type from sample.")?;
+    Ok(Schema::new(sample.guess_data_types()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,16 +312,18 @@ mod tests {
     fn record_to_datatypes() {
         let buf = "Cat,50,1.0,1990-11-28T12:00:09.0-07:00\n".as_bytes();
         let mut input = BufReader::new(buf);
-        let mut reader = Reader::new();
-        let record = Record::from_buf(&mut reader, &mut input).unwrap();
-        let types: Vec<DataType> = record.guess_data_types();
+        let schema = infer_schema(&mut input).unwrap();
         let answers = vec![
-            DataType::Utf8,
-            DataType::Int64,
-            DataType::Float64,
-            DataType::Utf8,
+            Field::new(DataType::Utf8),
+            Field::new(DataType::Int64),
+            Field::new(DataType::Float64),
+            Field::new(DataType::Utf8),
         ];
 
-        assert_eq!(types, answers);
+        assert!(schema
+            .fields()
+            .into_iter()
+            .zip(answers.into_iter())
+            .all(|(a, b)| a.data_type() == b.data_type()));
     }
 }
