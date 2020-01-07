@@ -1,3 +1,4 @@
+/// An interface to CSV (comma-separated values).
 pub(crate) mod reader;
 
 pub use reader::guess_data_types;
