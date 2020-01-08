@@ -8,7 +8,6 @@ mod table;
 pub(crate) mod util;
 
 pub use array::{Array, BinaryArray, StringArray};
-pub use csv::guess_data_types;
 pub use datatypes::{
     DataType, Field, Float64Type, Int32Type, Int64Type, Schema, TimeUnit, TimestampSecondType,
     UInt32Type, UInt8Type,

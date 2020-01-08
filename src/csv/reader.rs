@@ -3,9 +3,7 @@ use crate::datatypes::{DataType, Field, PrimitiveType, Schema};
 use crate::memory::AllocationError;
 use csv_core::ReadRecordResult;
 use std::fmt;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read};
-use std::path::Path;
+use std::io::{BufRead, BufReader, Read};
 use std::str::{self, FromStr};
 use std::sync::Arc;
 
@@ -134,11 +132,6 @@ impl Record {
         }
         result
     }
-}
-
-pub fn guess_data_types(input: &Path) -> io::Result<Schema> {
-    let mut input = BufReader::new(File::open(input)?);
-    infer_schema(&mut input).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
 }
 
 pub struct ParseError {
@@ -297,6 +290,7 @@ where
     Ok(builder.build())
 }
 
+/// Infers the schema of CSV by reading one record.
 pub fn infer_schema<R: Read>(reader: &mut BufReader<R>) -> Result<Schema, String> {
     let mut csv_reader = csv_core::Reader::new();
     let sample = Record::from_buf(&mut csv_reader, reader)
