@@ -85,10 +85,10 @@ mod tests {
     pub fn convert_to_conc_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
     ) -> ConcurrentEnumMaps {
-        let c_enum_maps = Arc::new(DashMap::default());
+        let c_enum_maps = Arc::new(DashMap::new());
 
         for (column, map) in enum_maps {
-            let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
+            let c_map = Arc::new(DashMap::<String, (u32, usize)>::new());
             for (data, enum_val) in map {
                 c_map.insert(data.clone(), (enum_val.0, enum_val.1));
             }
