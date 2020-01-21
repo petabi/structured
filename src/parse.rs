@@ -3,15 +3,16 @@ use crate::csv::{reader::*, FieldParser, Record};
 use crate::datatypes::*;
 use crate::Column;
 use dashmap::DashMap;
-use num_traits::ToPrimitive;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 
-pub fn records_to_columns(
+pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     values: &[&[u8]],
     parsers: &[FieldParser],
     labels: &ConcurrentEnumMaps,
+    enum_max_values: &Arc<HashMap<usize, Arc<Mutex<u32>>, S>>,
 ) -> Result<Vec<Column>, variable::Error> {
     let values = Record::from_data(values);
     let mut batch = Vec::with_capacity(parsers.len());
@@ -45,17 +46,19 @@ pub fn records_to_columns(
                 for r in &values {
                     let key = std::str::from_utf8(r.get(i).unwrap_or_default())?;
                     let value = labels.get(&i).map_or_else(u32::max_value, |map| {
-                        let enum_value = map
-                            .get_or_insert(
-                                &key.to_string(),
-                                (
-                                    (map.len() + 1).to_u32().unwrap_or(u32::max_value()),
-                                    0_usize,
-                                ),
-                            )
-                            .0;
-                        map.alter(key, |v| (v.0, v.1 + 1));
-                        enum_value
+                        let mut entry = map.entry(key.to_string()).or_insert_with(|| {
+                            enum_max_values
+                                .get(&i)
+                                .map_or((u32::max_value(), 0_usize), |v| {
+                                    let mut value_locked = v.lock().expect("safe");
+                                    if *value_locked < u32::max_value() {
+                                        *value_locked += 1;
+                                    }
+                                    (*value_locked, 0_usize)
+                                })
+                        });
+                        *entry.value_mut() = (entry.value().0, entry.value().1 + 1);
+                        entry.value().0
                         // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
                     });
                     builder.try_push(value)?;
@@ -74,6 +77,7 @@ mod tests {
     use crate::array::{Array, BinaryArray, StringArray};
     use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
+    use num_traits::ToPrimitive;
     use std::collections::HashMap;
     use std::convert::TryFrom;
     use std::net::Ipv4Addr;
@@ -81,10 +85,10 @@ mod tests {
     pub fn convert_to_conc_enum_maps(
         enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
     ) -> ConcurrentEnumMaps {
-        let c_enum_maps = Arc::new(DashMap::default());
+        let c_enum_maps = Arc::new(DashMap::new());
 
         for (column, map) in enum_maps {
-            let c_map = Arc::new(DashMap::<String, (u32, usize)>::default());
+            let c_map = Arc::new(DashMap::<String, (u32, usize)>::new());
             for (data, enum_val) in map {
                 c_map.insert(data.clone(), (enum_val.0, enum_val.1));
             }
@@ -210,9 +214,21 @@ mod tests {
         ];
         let (data, labels, columns) = get_test_data();
         let records: Vec<&[u8]> = data.iter().map(|d| d.as_slice()).collect();
+        let c_enum_maps = convert_to_conc_enum_maps(&labels);
+        let enum_max_values: HashMap<usize, Arc<Mutex<u32>>> = c_enum_maps
+            .iter()
+            .map(|m| {
+                (
+                    *m.key(),
+                    Arc::new(Mutex::new(
+                        m.value().len().to_u32().unwrap_or(u32::max_value()),
+                    )),
+                )
+            })
+            .collect();
+        let enum_max_values = Arc::new(enum_max_values);
         let result =
-            super::records_to_columns(&records, &parsers, &convert_to_conc_enum_maps(&labels))
-                .unwrap();
+            super::records_to_columns(&records, &parsers, &c_enum_maps, &enum_max_values).unwrap();
         assert_eq!(result, columns);
     }
 
@@ -223,12 +239,22 @@ mod tests {
 
         let record = "1\n".to_string().into_bytes();
         let row = vec![record.as_slice()];
-        let result = super::records_to_columns(
-            row.as_slice(),
-            &parsers,
-            &convert_to_conc_enum_maps(&labels),
-        )
-        .unwrap();
+        let c_enum_maps = convert_to_conc_enum_maps(&labels);
+        let enum_max_values: HashMap<usize, Arc<Mutex<u32>>> = c_enum_maps
+            .iter()
+            .map(|m| {
+                (
+                    *m.key(),
+                    Arc::new(Mutex::new(
+                        m.value().len().to_u32().unwrap_or(u32::max_value()),
+                    )),
+                )
+            })
+            .collect();
+        let enum_max_values = Arc::new(enum_max_values);
+        let result =
+            super::records_to_columns(row.as_slice(), &parsers, &c_enum_maps, &enum_max_values)
+                .unwrap();
 
         let c = Column::try_from_slice::<UInt32Type>(&[u32::max_value()][0..1]).unwrap();
         assert_eq!(c, result[0]);
