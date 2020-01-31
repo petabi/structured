@@ -291,10 +291,13 @@ where
 }
 
 /// Infers the schema of CSV by reading one record.
+///
+/// # Errors
+///
+/// Returns an error if there is no data to read from `reader`.
 pub fn infer_schema<R: Read>(reader: &mut BufReader<R>) -> Result<Schema, String> {
     let mut csv_reader = csv_core::Reader::new();
-    let sample = Record::from_buf(&mut csv_reader, reader)
-        .ok_or("fail to extract data type from sample.")?;
+    let sample = Record::from_buf(&mut csv_reader, reader).ok_or("no data available")?;
     Ok(Schema::new(sample.guess_data_types()))
 }
 

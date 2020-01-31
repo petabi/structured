@@ -8,6 +8,11 @@ use std::sync::{Arc, Mutex};
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 
+/// Parses byte sequences and converts them into `Column`s.
+///
+/// # Errors
+///
+/// Returns an error if memory allocation or parsing records failed.
 pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     values: &[&[u8]],
     parsers: &[FieldParser],
