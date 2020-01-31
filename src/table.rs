@@ -308,6 +308,11 @@ impl Column {
         }
     }
 
+    /// Converts a slice into a `Column`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation failed.
     pub fn try_from_slice<T>(slice: &[T::Native]) -> Result<Self, AllocationError>
     where
         T: PrimitiveType,
@@ -352,6 +357,12 @@ impl Column {
         other.len = 0;
     }
 
+    /// Creates an iterator iterating over all the cells in this `Column`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the type parameter does not match with the type of
+    /// this `Column`.
     pub fn iter<'a, T>(&'a self) -> Result<Flatten<vec::IntoIter<&'a T::Array>>, TypeError>
     where
         T: ArrayType,
@@ -370,6 +381,13 @@ impl Column {
         Ok(arrays.into_iter().flatten())
     }
 
+    /// Creates an iterator iterating over a subset of the cells in this
+    /// `Column`, designated by `selected`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the type parameter does not match with the type of
+    /// this `Column`.
     pub fn view_iter<'a, 'b, A, T>(
         &'a self,
         selected: &'b [usize],
