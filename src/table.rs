@@ -18,6 +18,7 @@ use std::ops::{Deref, Index};
 use std::slice;
 use std::sync::Arc;
 use std::vec;
+use strum_macros::EnumString;
 
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const NUM_OF_TOP_N: usize = 30;
@@ -25,7 +26,9 @@ const NUM_OF_TOP_N: usize = 30;
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, EnumString, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "snake_case")]
 pub enum ColumnType {
     Int64,
     Float64,
