@@ -562,15 +562,15 @@ impl Column {
             }
             ColumnType::Enum => {
                 let iter = self.view_iter::<UInt32ArrayType, u32>(rows).unwrap();
-                describe_top_n!(iter, self.len(), desc, u32, DescriptionElement::UInt);
+                describe_top_n!(iter, rows.len(), desc, u32, DescriptionElement::UInt);
             }
             ColumnType::Utf8 => {
                 let iter = self.view_iter::<Utf8ArrayType, str>(rows).unwrap();
-                describe_top_n!(iter, self.len(), desc, str, DescriptionElement::Text);
+                describe_top_n!(iter, rows.len(), desc, str, DescriptionElement::Text);
             }
             ColumnType::Binary => {
                 let iter = self.view_iter::<BinaryArrayType, [u8]>(rows).unwrap();
-                describe_top_n!(iter, self.len(), desc, [u8], DescriptionElement::Binary);
+                describe_top_n!(iter, rows.len(), desc, [u8], DescriptionElement::Binary);
             }
             ColumnType::IpAddr => {
                 let values = self
