@@ -107,31 +107,6 @@ impl Record {
         };
         Some(&self.fields[start..end])
     }
-
-    #[must_use]
-    fn guess_data_types(&self) -> Vec<Field> {
-        let mut result = vec![];
-        for (i, &end) in self.ends.iter().enumerate() {
-            let start = match i.checked_sub(1).and_then(|i| self.ends.get(i)) {
-                None => 0,
-                Some(&start) => start,
-            };
-            let field = if let Ok(field) = std::str::from_utf8(&self.fields[start..end]) {
-                field
-            } else {
-                result.push(Field::new(DataType::Binary));
-                continue;
-            };
-            result.push(if field.parse::<i64>().is_ok() {
-                Field::new(DataType::Int64)
-            } else if field.parse::<f64>().is_ok() {
-                Field::new(DataType::Float64)
-            } else {
-                Field::new(DataType::Utf8)
-            });
-        }
-        result
-    }
 }
 
 pub struct ParseError {
@@ -290,6 +265,21 @@ where
     Ok(builder.build())
 }
 
+/// Infers the data type of a field in a CSV record.
+fn infer_field_type(field: &[u8]) -> DataType {
+    if let Ok(s) = str::from_utf8(field) {
+        if s.parse::<i64>().is_ok() {
+            DataType::Int64
+        } else if s.parse::<f64>().is_ok() {
+            DataType::Float64
+        } else {
+            DataType::Utf8
+        }
+    } else {
+        DataType::Binary
+    }
+}
+
 /// Infers the schema of CSV by reading one record.
 ///
 /// # Errors
@@ -297,8 +287,15 @@ where
 /// Returns an error if there is no data to read from `reader`.
 pub fn infer_schema<R: Read>(reader: &mut BufReader<R>) -> Result<Schema, String> {
     let mut csv_reader = csv_core::Reader::new();
-    let sample = Record::from_buf(&mut csv_reader, reader).ok_or("no data available")?;
-    Ok(Schema::new(sample.guess_data_types()))
+    let record = Record::from_buf(&mut csv_reader, reader).ok_or("no data available")?;
+    let mut fields = Vec::new();
+    for i in 0..record.ends.len() {
+        let data_type = record
+            .get(i)
+            .map_or(DataType::Utf8, |f| infer_field_type(f));
+        fields.push(Field::new(data_type));
+    }
+    Ok(Schema::new(fields))
 }
 
 #[cfg(test)]
