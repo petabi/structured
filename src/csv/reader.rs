@@ -1,11 +1,14 @@
-use crate::array::{Array, Builder, PrimitiveBuilder};
-use crate::datatypes::{DataType, Field, PrimitiveType, Schema};
+use crate::array::{variable, Array, BinaryBuilder, Builder, PrimitiveBuilder, StringBuilder};
+use crate::datatypes::*;
 use crate::memory::AllocationError;
+use crate::record;
 use csv_core::ReadRecordResult;
+use dashmap::DashMap;
+use std::collections::HashMap;
 use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::str::{self, FromStr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub struct Record {
     fields: Vec<u8>,
@@ -240,6 +243,125 @@ fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
         chrono::NaiveDateTime::parse_from_str(str::from_utf8(v)?, "%Y-%m-%dT%H:%M:%S%.f%:z")?
             .timestamp(),
     )
+}
+
+type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
+
+/// CSV reader
+pub struct Reader<'a, I, H>
+where
+    I: Iterator<Item = &'a [u8]>,
+    H: std::hash::BuildHasher,
+{
+    record_iter: I,
+    batch_size: usize,
+    parsers: &'a [FieldParser],
+    labels: &'a ConcurrentEnumMaps,
+    enum_max_values: Arc<HashMap<usize, Arc<Mutex<u32>>, H>>,
+}
+
+impl<'a, I, H> Reader<'a, I, H>
+where
+    I: Iterator<Item = &'a [u8]>,
+    H: std::hash::BuildHasher,
+{
+    /// Creates a `Reader` from a byte-sequence iterator.
+    pub fn new(
+        record_iter: I,
+        batch_size: usize,
+        parsers: &'a [FieldParser],
+        labels: &'a ConcurrentEnumMaps,
+        enum_max_values: Arc<HashMap<usize, Arc<Mutex<u32>>, H>>,
+    ) -> Self {
+        Reader {
+            record_iter,
+            batch_size,
+            parsers,
+            labels,
+            enum_max_values,
+        }
+    }
+
+    /// Reads the next batch of records.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error of parsing a field fails.
+    pub fn next_batch(&mut self) -> Result<Option<record::Batch>, variable::Error> {
+        let mut rows = Vec::with_capacity(self.batch_size);
+        let mut csv_reader = csv_core::Reader::new();
+        for _ in 0..self.batch_size {
+            match self.record_iter.next() {
+                Some(r) => {
+                    if let Some(r) = Record::new(&mut csv_reader, r) {
+                        rows.push(r)
+                    }
+                    // Skip invalid rows.
+                }
+                None => break,
+            }
+        }
+
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let mut arrays = Vec::with_capacity(self.parsers.len());
+        for (i, parser) in self.parsers.iter().enumerate() {
+            let col = match parser {
+                FieldParser::Int64(parse) | FieldParser::Timestamp(parse) => {
+                    build_primitive_array::<Int64Type, Int64Parser>(&rows, i, parse)?
+                }
+                FieldParser::Float64(parse) => {
+                    build_primitive_array::<Float64Type, Float64Parser>(&rows, i, parse)?
+                }
+                FieldParser::Utf8 => {
+                    let mut builder = StringBuilder::with_capacity(rows.len())?;
+                    for row in &rows {
+                        builder.try_push(std::str::from_utf8(row.get(i).unwrap_or_default())?)?;
+                    }
+                    builder.build()
+                }
+                FieldParser::Binary => {
+                    let mut builder = BinaryBuilder::with_capacity(rows.len())?;
+                    for row in &rows {
+                        builder.try_push(row.get(i).unwrap_or_default())?;
+                    }
+                    builder.build()
+                }
+                FieldParser::UInt32(parse) => {
+                    build_primitive_array::<UInt32Type, UInt32Parser>(&rows, i, parse)?
+                }
+                FieldParser::Dict => {
+                    let mut builder = PrimitiveBuilder::<UInt32Type>::with_capacity(rows.len())?;
+                    for r in &rows {
+                        let key = std::str::from_utf8(r.get(i).unwrap_or_default())?;
+                        let value = self.labels.get(&i).map_or_else(u32::max_value, |map| {
+                            let mut entry = map.entry(key.to_string()).or_insert_with(|| {
+                                self.enum_max_values.get(&i).map_or(
+                                    (u32::max_value(), 0_usize),
+                                    |v| {
+                                        let mut value_locked = v.lock().expect("safe");
+                                        if *value_locked < u32::max_value() {
+                                            *value_locked += 1;
+                                        }
+                                        (*value_locked, 0_usize)
+                                    },
+                                )
+                            });
+                            *entry.value_mut() = (entry.value().0, entry.value().1 + 1);
+                            entry.value().0
+                            // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
+                        });
+                        builder.try_push(value)?;
+                    }
+                    builder.build()
+                }
+            };
+            arrays.push(col);
+        }
+        Ok(Some(record::Batch::new(arrays)))
+    }
 }
 
 pub(crate) fn build_primitive_array<T, P>(

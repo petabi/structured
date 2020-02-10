@@ -1,6 +1,5 @@
-use crate::array::{variable, BinaryBuilder, Builder, PrimitiveBuilder, StringBuilder};
-use crate::csv::{reader::*, FieldParser, Record};
-use crate::datatypes::*;
+use crate::array::variable;
+use crate::csv::{FieldParser, Reader};
 use crate::Column;
 use dashmap::DashMap;
 use std::collections::HashMap;
@@ -19,67 +18,26 @@ pub fn records_to_columns<S: ::std::hash::BuildHasher>(
     labels: &ConcurrentEnumMaps,
     enum_max_values: &Arc<HashMap<usize, Arc<Mutex<u32>>, S>>,
 ) -> Result<Vec<Column>, variable::Error> {
-    let values = Record::from_data(values);
-    let mut batch = Vec::with_capacity(parsers.len());
-    for (i, parser) in parsers.iter().enumerate() {
-        let col = match parser {
-            FieldParser::Int64(parse) | FieldParser::Timestamp(parse) => {
-                build_primitive_array::<Int64Type, Int64Parser>(&values, i, parse)?
-            }
-            FieldParser::Float64(parse) => {
-                build_primitive_array::<Float64Type, Float64Parser>(&values, i, parse)?
-            }
-            FieldParser::Utf8 => {
-                let mut builder = StringBuilder::with_capacity(values.len())?;
-                for row in &values {
-                    builder.try_push(std::str::from_utf8(row.get(i).unwrap_or_default())?)?;
-                }
-                builder.build()
-            }
-            FieldParser::Binary => {
-                let mut builder = BinaryBuilder::with_capacity(values.len())?;
-                for row in &values {
-                    builder.try_push(row.get(i).unwrap_or_default())?;
-                }
-                builder.build()
-            }
-            FieldParser::UInt32(parse) => {
-                build_primitive_array::<UInt32Type, UInt32Parser>(&values, i, parse)?
-            }
-            FieldParser::Dict => {
-                let mut builder = PrimitiveBuilder::<UInt32Type>::with_capacity(values.len())?;
-                for r in &values {
-                    let key = std::str::from_utf8(r.get(i).unwrap_or_default())?;
-                    let value = labels.get(&i).map_or_else(u32::max_value, |map| {
-                        let mut entry = map.entry(key.to_string()).or_insert_with(|| {
-                            enum_max_values
-                                .get(&i)
-                                .map_or((u32::max_value(), 0_usize), |v| {
-                                    let mut value_locked = v.lock().expect("safe");
-                                    if *value_locked < u32::max_value() {
-                                        *value_locked += 1;
-                                    }
-                                    (*value_locked, 0_usize)
-                                })
-                        });
-                        *entry.value_mut() = (entry.value().0, entry.value().1 + 1);
-                        entry.value().0
-                        // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
-                    });
-                    builder.try_push(value)?;
-                }
-                builder.build()
-            }
-        };
-        batch.push(col.into());
-    }
-    Ok(batch)
+    let mut reader = Reader::new(
+        values.iter().cloned(),
+        values.len(),
+        parsers,
+        labels,
+        enum_max_values.clone(),
+    );
+    let columns: Vec<Column> = if let Some(batch) = reader.next_batch()? {
+        batch.columns().iter().map(|c| c.clone().into()).collect()
+    } else {
+        Vec::new()
+    };
+    Ok(columns)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::array::{Array, BinaryArray, StringArray};
+    use crate::datatypes::*;
     use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
     use num_traits::ToPrimitive;
