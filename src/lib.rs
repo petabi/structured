@@ -4,6 +4,7 @@ pub mod csv;
 mod datatypes;
 mod memory;
 mod parse;
+pub mod record;
 mod table;
 pub(crate) mod util;
 
