@@ -26,6 +26,7 @@ const NUM_OF_TOP_N: usize = 30;
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
 
+/// The data type of a table column.
 #[derive(Clone, Copy, Debug, Deserialize, EnumString, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "snake_case")]
@@ -53,6 +54,7 @@ impl Into<DataType> for ColumnType {
     }
 }
 
+/// Structured data represented in a column-oriented form.
 #[derive(Debug, Default, Clone)]
 pub struct Table {
     columns: Vec<Column>,
@@ -291,6 +293,7 @@ macro_rules! describe_top_n {
     };
 }
 
+/// A single column in a table.
 #[derive(Clone, Debug)]
 pub struct Column {
     arrays: Vec<Arc<dyn Array>>,
@@ -685,7 +688,9 @@ pub trait ArrayType {
 }
 
 macro_rules! make_array_type {
-    ($name:ident, $array_ty:ty, $elem_ty:ty) => {
+    ($(#[$outer:meta])*
+    $name:ident, $array_ty:ty, $elem_ty:ty) => {
+        $(#[$outer])*
         pub struct $name<'a> {
             _marker: PhantomData<&'a u8>,
         }
@@ -697,13 +702,48 @@ macro_rules! make_array_type {
     };
 }
 
-make_array_type!(Int32ArrayType, primitive::Array<Int32Type>, i32);
-make_array_type!(Int64ArrayType, primitive::Array<Int64Type>, i64);
-make_array_type!(UInt8ArrayType, primitive::Array<UInt8Type>, u8);
-make_array_type!(UInt32ArrayType, primitive::Array<UInt32Type>, u32);
-make_array_type!(Float64ArrayType, primitive::Array<Float64Type>, f64);
-make_array_type!(Utf8ArrayType, StringArray, str);
-make_array_type!(BinaryArrayType, BinaryArray, [u8]);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are `i32`s.
+    Int32ArrayType,
+    primitive::Array<Int32Type>,
+    i32
+);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are `i64`s.
+    Int64ArrayType,
+    primitive::Array<Int64Type>,
+    i64
+);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are `u8`s.
+    UInt8ArrayType,
+    primitive::Array<UInt8Type>,
+    u8
+);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are `u32`s.
+    UInt32ArrayType,
+    primitive::Array<UInt32Type>,
+    u32
+);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are `f64`s.
+    Float64ArrayType,
+    primitive::Array<Float64Type>,
+    f64
+);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are UTF-8 strings.
+    Utf8ArrayType,
+    StringArray,
+    str
+);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are byte sequences.
+    BinaryArrayType,
+    BinaryArray,
+    [u8]
+);
 
 #[derive(Debug, PartialEq)]
 pub struct TypeError();
@@ -753,6 +793,7 @@ where
     }
 }
 
+/// The underlying data type of a column description.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum DescriptionElement {
     Int(i64),
@@ -781,6 +822,7 @@ impl fmt::Display for DescriptionElement {
     }
 }
 
+/// Statistical summary of data of the same type.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Description {
     count: usize,

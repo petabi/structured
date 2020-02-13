@@ -10,20 +10,12 @@ use std::io::{BufRead, BufReader, Read};
 use std::str::{self, FromStr};
 use std::sync::{Arc, Mutex};
 
-pub struct Record {
+struct Record {
     fields: Vec<u8>,
     ends: Vec<usize>,
 }
 
 impl Record {
-    #[must_use]
-    pub fn from_data(data: &[&[u8]]) -> Vec<Self> {
-        let mut reader = csv_core::Reader::new();
-        data.iter()
-            .filter_map(|d| Self::new(&mut reader, d))
-            .collect()
-    }
-
     /// # Panics
     ///
     /// Panics if `input.len() * 2` overflows `usize`.
@@ -166,38 +158,58 @@ pub type Int64Parser = dyn Fn(&[u8]) -> Result<i64, ParseError> + Send + Sync;
 pub type UInt32Parser = dyn Fn(&[u8]) -> Result<u32, ParseError> + Send + Sync;
 pub type Float64Parser = dyn Fn(&[u8]) -> Result<f64, ParseError> + Send + Sync;
 
+/// A parser for a single field in CSV.
 #[derive(Clone)]
 pub enum FieldParser {
+    /// A parser converting a byte sequence into `i64`.
     Int64(Arc<Int64Parser>),
+
+    /// A parser converting a byte sequence into `u32`.
     UInt32(Arc<UInt32Parser>),
+
+    /// A parser converting a byte sequence into `f64`.
     Float64(Arc<Float64Parser>),
+
+    /// A parser reading the input into a UTF-8 string.
     Utf8,
+
+    /// A dummy parser that preserves the input byte sequence.
     Binary,
+
+    /// A timestamp parser converting time into `i64`.
     Timestamp(Arc<Int64Parser>),
+
+    /// A parser for nominal values, storing them using dictionary-encoding.
     Dict,
 }
 
 impl FieldParser {
+    /// Creates an `i64` parser.
     #[must_use]
     pub fn int64() -> Self {
         Self::Int64(Arc::new(parse::<i64>))
     }
 
+    /// Creates a `u32` parser.
     #[must_use]
     pub fn uint32() -> Self {
         Self::UInt32(Arc::new(parse::<u32>))
     }
 
+    /// Creates a `f64` parser.
     #[must_use]
     pub fn float64() -> Self {
         Self::Float64(Arc::new(parse::<f64>))
     }
 
+    /// Creates a timestamp parser that converts time into the number of
+    /// non-leap seconds since the midnight on January 1, 1970.
     #[must_use]
     pub fn timestamp() -> Self {
         Self::Int64(Arc::new(parse_timestamp))
     }
 
+    /// Creates a custom `u32` parser.
     #[must_use]
     pub fn uint32_with_parser<P>(parser: P) -> Self
     where
@@ -206,6 +218,7 @@ impl FieldParser {
         Self::UInt32(Arc::new(parser))
     }
 
+    /// Creates a custom timestamp parser.
     #[must_use]
     pub fn timestamp_with_parser<P>(parser: P) -> Self
     where
@@ -364,7 +377,7 @@ where
     }
 }
 
-pub(crate) fn build_primitive_array<T, P>(
+fn build_primitive_array<T, P>(
     rows: &[Record],
     col_idx: usize,
     parse: &Arc<P>,

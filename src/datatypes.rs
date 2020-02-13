@@ -150,11 +150,13 @@ impl Serialize for DataType {
     }
 }
 
+/// The unit of timestamp stored as an integer.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TimeUnit {
     Second,
 }
 
+/// Metadata for a field in a schema.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Field {
     #[serde(rename = "type")]
@@ -205,7 +207,9 @@ pub trait PrimitiveType: 'static {
 }
 
 macro_rules! make_primitive_type {
-    ($name:ident, $native_ty:ty, $data_ty:expr, $bit_width:expr, $default_val:expr) => {
+    ($(#[$outer:meta])*
+    $name:ident, $native_ty:ty, $data_ty:expr, $bit_width:expr, $default_val:expr) => {
+        $(#[$outer])*
         pub struct $name {}
 
         impl PrimitiveType for $name {
@@ -226,12 +230,48 @@ macro_rules! make_primitive_type {
     };
 }
 
-make_primitive_type!(Int32Type, i32, DataType::Int32, 32, 0_i32);
-make_primitive_type!(Int64Type, i64, DataType::Int64, 64, 0_i64);
-make_primitive_type!(UInt8Type, u8, DataType::UInt8, 8, 0_u8);
-make_primitive_type!(UInt32Type, u32, DataType::UInt32, 32, 0_u32);
-make_primitive_type!(Float64Type, f64, DataType::Float64, 64, 0_f64);
 make_primitive_type!(
+    /// Primitive data type for `i32`.
+    Int32Type,
+    i32,
+    DataType::Int32,
+    32,
+    0_i32
+);
+make_primitive_type!(
+    /// Primitive data type for `i64`.
+    Int64Type,
+    i64,
+    DataType::Int64,
+    64,
+    0_i64
+);
+make_primitive_type!(
+    /// Primitive data type for `u8`.
+    UInt8Type,
+    u8,
+    DataType::UInt8,
+    8,
+    0_u8
+);
+make_primitive_type!(
+    /// Primitive data type for `u32`.
+    UInt32Type,
+    u32,
+    DataType::UInt32,
+    32,
+    0_u32
+);
+make_primitive_type!(
+    /// Primitive data type for `f64`.
+    Float64Type,
+    f64,
+    DataType::Float64,
+    64,
+    0_f64
+);
+make_primitive_type!(
+    /// Primitive data type for `i64` representing a timestamp.
     TimestampSecondType,
     i64,
     DataType::Timestamp(TimeUnit::Second),
