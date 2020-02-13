@@ -198,6 +198,7 @@ impl super::Builder for StringBuilder {
     }
 }
 
+/// An array whose elements are byte sequences.
 pub struct BinaryArray {
     data: Arc<Data>,
     offsets: RawPtrBox<i32>,
