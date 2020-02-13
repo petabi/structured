@@ -5,13 +5,12 @@ file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2020-02-13
 
 ### Added
 
-- Generated enum maps during parsing events. The enum value of each column starts with `1_u32`.
-- Limited enum dimensions by a user configuration, a predefined coverage of data, and a maximum dimension.
+- DataFrame-like data structure (`Table`) to represent structured data in a
+  column-oriented form.
+- Interface to read CSV data into `Table`.
 
-### Changed
-
-- `Description` contains enum fields as `String` which is converted from `u32` at `describe` functions. 
+[0.1.0]: https://github.com/petabi/eventio/tree/0.1.0

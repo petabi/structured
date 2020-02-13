@@ -1,12 +1,20 @@
 [package]
 name = "structured"
 version = "0.1.0"
+description = "Data structures to handle large, structured data."
+homepage = "https://github.com/petabi/structured"
+repository = "https://github.com/petabi/structured"
+license = "Apache-2.0"
 authors = [
     "Min Kim <msk@dolbo.net>",
-    "Min Shao <mshao@petabi.com>",
+    "Min Shao <min.shao1988@gmail.com>",
     "Sehkone Kim <sehkone@petabi.com>",
 ]
 edition = "2018"
+exclude = ["./github"]
+
+[badges]
+codecov = { repository = "petabi/structured", service = "github" }
 
 [dependencies]
 chrono = { version = "^0.4.9", features = ["serde"] }
