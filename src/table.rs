@@ -53,6 +53,12 @@ pub enum TimeInterval {
     OneHour,
 }
 
+impl Default for TimeInterval {
+    fn default() -> Self {
+        Self::OneHour
+    }
+}
+
 impl Into<u32> for TimeInterval {
     #[must_use]
     fn into(self) -> u32 {
