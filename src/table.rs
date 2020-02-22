@@ -21,8 +21,8 @@ use std::vec;
 use strum_macros::EnumString;
 
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
-const DEFAULT_NUM_OF_TOP_N: usize = 30;
-const DEFAULT_NUM_OF_TOP_N_OF_DATETIME: usize = 336; // 24 hours x 14 days
+const DEFAULT_NUM_OF_TOP_N: u32 = 30;
+const DEFAULT_NUM_OF_TOP_N_OF_DATETIME: u32 = 336; // 24 hours x 14 days
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
@@ -159,7 +159,7 @@ impl Table {
         column_types: &Arc<Vec<ColumnType>>,
         r_enum_maps: &ReverseEnumMaps,
         time_intervals: &Arc<HashMap<usize, TimeInterval>>,
-        numbers_of_top_n: &Arc<Vec<usize>>,
+        numbers_of_top_n: &Arc<Vec<u32>>,
     ) -> Vec<Description> {
         self.columns
             .iter()
@@ -324,10 +324,11 @@ macro_rules! describe_top_n {
         $d.count = $len;
         $d.unique_count = top_n_native.len();
         let mut top_n: Vec<(DescriptionElement, usize)> = Vec::new();
-        let top_n_num = if $num_of_top_n > top_n_native.len() {
+        let num_of_top_n = $num_of_top_n.to_usize().expect("safe: u32 -> usize");
+        let top_n_num = if num_of_top_n > top_n_native.len() {
             top_n_native.len()
         } else {
-            $num_of_top_n
+            num_of_top_n
         };
         for (x, y) in &top_n_native[0..top_n_num] {
             top_n.push(($t2((*x).to_owned()), *y));
@@ -464,7 +465,7 @@ impl Column {
         &self,
         rows: &[usize],
         reverse_map: &Arc<HashMap<u32, Vec<String>>>,
-        number_of_top_n: usize,
+        number_of_top_n: u32,
     ) -> Description {
         let desc = self.describe(rows, ColumnType::Enum, number_of_top_n);
 
@@ -574,7 +575,7 @@ impl Column {
         &self,
         rows: &[usize],
         column_type: ColumnType,
-        number_of_top_n: usize,
+        number_of_top_n: u32,
     ) -> Description {
         let mut desc = Description::default();
 
@@ -679,7 +680,7 @@ impl Column {
         &self,
         rows: &[usize],
         time_interval: TimeInterval,
-        number_of_top_n: usize,
+        number_of_top_n: u32,
     ) -> Description {
         let mut desc = Description::default();
 
@@ -1062,7 +1063,7 @@ fn describe_top_n_f64<I>(
     iter: I,
     min: f64,
     max: f64,
-    number_of_top_n: usize,
+    number_of_top_n: u32,
 ) -> (usize, Vec<(DescriptionElement, usize)>)
 where
     I: Iterator,
@@ -1089,6 +1090,7 @@ where
 
     let mut top_n: Vec<(DescriptionElement, usize)> = Vec::new();
 
+    let number_of_top_n = number_of_top_n.to_usize().expect("safe: u32 -> usize");
     let num_top_n = if number_of_top_n > count.len() {
         count.len()
     } else {
