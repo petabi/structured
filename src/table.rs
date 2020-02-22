@@ -23,6 +23,7 @@ use strum_macros::EnumString;
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const DEFAULT_NUM_OF_TOP_N: u32 = 30;
 const DEFAULT_NUM_OF_TOP_N_OF_DATETIME: u32 = 336; // 24 hours x 14 days
+const DEFAULT_TIME_INTERVAL: TimeInterval = TimeInterval::OneHour;
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
@@ -72,8 +73,6 @@ impl Into<u32> for TimeInterval {
         }
     }
 }
-
-const DEFAULT_TIME_INTERVAL: TimeInterval = TimeInterval::OneHour;
 
 impl Into<DataType> for ColumnType {
     #[must_use]
