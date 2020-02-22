@@ -164,7 +164,7 @@ impl Table {
         rows: &[usize],
         column_types: &Arc<Vec<ColumnType>>,
         r_enum_maps: &ReverseEnumMaps,
-        time_intervals: &Arc<HashMap<usize, TimeInterval>>,
+        time_intervals: &Arc<Vec<TimeInterval>>,
         numbers_of_top_n: &Arc<Vec<u32>>,
     ) -> Vec<Description> {
         self.columns
@@ -178,9 +178,15 @@ impl Table {
                         *numbers_of_top_n.get(index).unwrap_or(&DEFAULT_NUM_OF_TOP_N),
                     )
                 } else if let ColumnType::DateTime = column_types[index] {
+                    let mut cn = 0_usize;
+                    for i in 0..index {
+                        if let ColumnType::DateTime = column_types[i] {
+                            cn += 1;
+                        }
+                    }
                     column.describe_datetime(
                         rows,
-                        *time_intervals.get(&index).unwrap_or(&DEFAULT_TIME_INTERVAL),
+                        *time_intervals.get(cn).unwrap_or(&DEFAULT_TIME_INTERVAL),
                         *numbers_of_top_n
                             .get(index)
                             .unwrap_or(&DEFAULT_NUM_OF_TOP_N_OF_DATETIME),
@@ -1275,7 +1281,7 @@ mod tests {
             ColumnType::Binary,
         ]);
         let rows = vec![0_usize, 3, 1, 4, 2, 6, 5];
-        let time_intervals = Arc::new(HashMap::new());
+        let time_intervals = Arc::new(Vec::new());
         let numbers_of_top_n = Arc::new(Vec::new());
         let ds = table.describe(
             &rows,
