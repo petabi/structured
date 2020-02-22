@@ -14,5 +14,6 @@ pub use datatypes::{
 };
 pub use table::{
     BinaryArrayType, Column, ColumnType, Description, DescriptionElement, Float64ArrayType,
-    Int32ArrayType, Int64ArrayType, Table, UInt32ArrayType, UInt8ArrayType, Utf8ArrayType,
+    Int32ArrayType, Int64ArrayType, Table, TimeInterval, UInt32ArrayType, UInt8ArrayType,
+    Utf8ArrayType,
 };
