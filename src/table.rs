@@ -20,10 +20,9 @@ use std::sync::Arc;
 use std::vec;
 use strum_macros::EnumString;
 
-const NUM_OF_FLOAT_INTERVALS: usize = 100;
-const DEFAULT_NUM_OF_TOP_N: u32 = 30;
+pub const DEFAULT_NUM_OF_TOP_N: u32 = 30;
 const DEFAULT_NUM_OF_TOP_N_OF_DATETIME: u32 = 336; // 24 hours x 14 days
-const DEFAULT_TIME_INTERVAL: TimeInterval = TimeInterval::OneHour;
+const NUM_OF_FLOAT_INTERVALS: usize = 100;
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
@@ -185,7 +184,7 @@ impl Table {
                     }
                     column.describe_datetime(
                         rows,
-                        *time_intervals.get(cn).unwrap_or(&DEFAULT_TIME_INTERVAL),
+                        *time_intervals.get(cn).unwrap_or(&TimeInterval::default()),
                         *numbers_of_top_n
                             .get(index)
                             .unwrap_or(&DEFAULT_NUM_OF_TOP_N_OF_DATETIME),
