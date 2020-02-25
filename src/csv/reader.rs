@@ -375,6 +375,35 @@ where
         }
         Ok(Some(record::Batch::new(arrays)))
     }
+
+    pub fn generate_empty_batch(&self) -> record::Batch {
+        let arrays = self
+            .parsers
+            .iter()
+            .map(|parser| match parser {
+                FieldParser::Int64(_) | FieldParser::Timestamp(_) => {
+                    PrimitiveBuilder::<Int64Type>::with_capacity(0)
+                        .expect("fail to build empty array")
+                        .build()
+                }
+                FieldParser::Float64(_) => PrimitiveBuilder::<Float64Type>::with_capacity(0)
+                    .expect("fail to build empty array")
+                    .build(),
+                FieldParser::Utf8 => StringBuilder::with_capacity(0)
+                    .expect("fail to build empty array")
+                    .build(),
+                FieldParser::Binary => BinaryBuilder::with_capacity(0)
+                    .expect("fail to build empty array")
+                    .build(),
+                FieldParser::UInt32(_) | FieldParser::Dict => {
+                    PrimitiveBuilder::<UInt32Type>::with_capacity(0)
+                        .expect("fail to build empty array")
+                        .build()
+                }
+            })
+            .collect();
+        record::Batch::new(arrays)
+    }
 }
 
 fn build_primitive_array<T, P>(
