@@ -27,5 +27,5 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Interface to read CSV data into `Table`.
 
 [Unreleased]: https://github.com/petabi/structured/compare/0.1.1...master
-[0.1.1]: https://github.com/petabi/eventio/tree/0.1.1...0.1.0
-[0.1.0]: https://github.com/petabi/eventio/tree/0.1.0
+[0.1.1]: https://github.com/petabi/structured/tree/0.1.1...0.1.0
+[0.1.0]: https://github.com/petabi/structured/tree/0.1.0
