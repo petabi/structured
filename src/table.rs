@@ -23,6 +23,9 @@ use strum_macros::EnumString;
 pub const DEFAULT_NUM_OF_TOP_N: u32 = 30;
 const DEFAULT_NUM_OF_TOP_N_OF_DATETIME: u32 = 336; // 24 hours x 14 days
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
+const DEFAULT_TIME_INTERVAL: u32 = 3600; // seconds
+const MAX_TIME_INTERVAL: u32 = 86_400; // one day
+const MIN_TIME_INTERVAL: u32 = 30;
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
@@ -39,38 +42,6 @@ pub enum ColumnType {
     Enum,
     Utf8,
     Binary,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, EnumString, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "snake_case")]
-pub enum TimeInterval {
-    ThirtySeconds,
-    OneMinute,
-    FiveMinutes,
-    TenMinutes,
-    ThirtyMinutes,
-    OneHour,
-}
-
-impl Default for TimeInterval {
-    fn default() -> Self {
-        Self::OneHour
-    }
-}
-
-impl Into<u32> for TimeInterval {
-    #[must_use]
-    fn into(self) -> u32 {
-        match self {
-            Self::ThirtySeconds => 30,
-            Self::OneMinute => 60,
-            Self::FiveMinutes => 300,
-            Self::TenMinutes => 600,
-            Self::ThirtyMinutes => 1800,
-            Self::OneHour => 3600,
-        }
-    }
 }
 
 impl Into<DataType> for ColumnType {
@@ -162,7 +133,7 @@ impl Table {
         rows: &[usize],
         column_types: &Arc<Vec<ColumnType>>,
         r_enum_maps: &ReverseEnumMaps,
-        time_intervals: &Arc<Vec<TimeInterval>>,
+        time_intervals: &Arc<Vec<u32>>,
         numbers_of_top_n: &Arc<Vec<u32>>,
     ) -> Vec<Description> {
         self.columns
@@ -184,7 +155,7 @@ impl Table {
                     }
                     column.describe_datetime(
                         rows,
-                        *time_intervals.get(cn).unwrap_or(&TimeInterval::default()),
+                        *time_intervals.get(cn).unwrap_or(&DEFAULT_TIME_INTERVAL),
                         *numbers_of_top_n
                             .get(index)
                             .unwrap_or(&DEFAULT_NUM_OF_TOP_N_OF_DATETIME),
@@ -689,44 +660,37 @@ impl Column {
     fn describe_datetime(
         &self,
         rows: &[usize],
-        time_interval: TimeInterval,
+        time_interval: u32,
         number_of_top_n: u32,
     ) -> Description {
         let mut desc = Description::default();
+
+        let time_interval = if time_interval > MAX_TIME_INTERVAL {
+            MAX_TIME_INTERVAL
+        } else {
+            time_interval
+        };
+        let time_interval = if time_interval < MIN_TIME_INTERVAL {
+            MIN_TIME_INTERVAL
+        } else {
+            time_interval
+        };
 
         let values = self
             .view_iter::<Int64ArrayType, i64>(rows)
             .unwrap()
             .map(|v: &i64| {
                 let dt = NaiveDateTime::from_timestamp(*v, 0);
-                match time_interval {
-                    TimeInterval::ThirtySeconds => {
-                        let interval: u32 = time_interval.into();
-                        let second: u32 = (dt.time().second() / interval) * interval;
-                        NaiveDateTime::new(
-                            dt.date(),
-                            NaiveTime::from_hms(dt.time().hour(), dt.time().minute(), second),
-                        )
-                    }
-                    TimeInterval::OneMinute => NaiveDateTime::new(
-                        dt.date(),
-                        NaiveTime::from_hms(dt.time().hour(), dt.time().minute(), 0),
-                    ),
-                    TimeInterval::FiveMinutes
-                    | TimeInterval::TenMinutes
-                    | TimeInterval::ThirtyMinutes => {
-                        let interval: u32 = time_interval.into();
-                        let interval = interval / 60;
-                        let minute = (dt.time().minute() / interval) * interval;
-                        NaiveDateTime::new(
-                            dt.date(),
-                            NaiveTime::from_hms(dt.time().hour(), minute, 0),
-                        )
-                    }
-                    TimeInterval::OneHour => {
-                        NaiveDateTime::new(dt.date(), NaiveTime::from_hms(dt.time().hour(), 0, 0))
-                    }
-                }
+                let dt_total_second = (dt.hour() * 3600 + dt.minute() * 60 + dt.second())
+                    / time_interval
+                    * time_interval;
+                let dt_hour = dt_total_second / 3600;
+                let dt_minute = (dt_total_second - dt_hour * 3600) / 60;
+                let dt_second = dt_total_second - (dt_hour * 3600 + dt_minute * 60);
+                NaiveDateTime::new(
+                    dt.date(),
+                    NaiveTime::from_hms(dt_hour, dt_minute, dt_second),
+                )
             })
             .collect::<Vec<_>>();
 
