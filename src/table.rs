@@ -2,7 +2,7 @@ use crate::array::*;
 use crate::datatypes::*;
 use crate::memory::AllocationError;
 use crate::{DataType, Schema};
-use chrono::{NaiveDateTime, NaiveTime, Timelike};
+use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -667,6 +667,8 @@ impl Column {
 
         let time_interval = if time_interval > MAX_TIME_INTERVAL {
             MAX_TIME_INTERVAL
+        // Users want to see time series of the same order intervals within MAX_TIME_INTERVAL which is in date units.
+        // If the interval is larger than a day, it should be in date units.
         } else {
             time_interval
         };
@@ -675,22 +677,16 @@ impl Column {
         } else {
             time_interval
         };
+        let time_interval = i64::from(time_interval);
 
         let values = self
             .view_iter::<Int64ArrayType, i64>(rows)
             .unwrap()
             .map(|v: &i64| {
-                let dt = NaiveDateTime::from_timestamp(*v, 0);
-                let dt_total_second = (dt.hour() * 3600 + dt.minute() * 60 + dt.second())
-                    / time_interval
-                    * time_interval;
-                let dt_hour = dt_total_second / 3600;
-                let dt_minute = (dt_total_second - dt_hour * 3600) / 60;
-                let dt_second = dt_total_second - (dt_hour * 3600 + dt_minute * 60);
-                NaiveDateTime::new(
-                    dt.date(),
-                    NaiveTime::from_hms(dt_hour, dt_minute, dt_second),
-                )
+                // The first interval of each day should start with 00:00:00.
+                let mut ts = *v / (24 * 60 * 60) * (24 * 60 * 60);
+                ts += (*v - ts) / time_interval * time_interval;
+                NaiveDateTime::from_timestamp(ts, 0)
             })
             .collect::<Vec<_>>();
 
