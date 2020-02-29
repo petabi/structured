@@ -2,7 +2,7 @@ use crate::array::*;
 use crate::datatypes::*;
 use crate::memory::AllocationError;
 use crate::{DataType, Schema};
-use chrono::{NaiveDateTime, NaiveTime, Timelike};
+use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -20,8 +20,12 @@ use std::sync::Arc;
 use std::vec;
 use strum_macros::EnumString;
 
+pub const DEFAULT_NUM_OF_TOP_N: u32 = 30;
+const DEFAULT_NUM_OF_TOP_N_OF_DATETIME: u32 = 336; // 24 hours x 14 days
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
-const NUM_OF_TOP_N: usize = 30;
+const DEFAULT_TIME_INTERVAL: u32 = 3600; // seconds
+const MAX_TIME_INTERVAL: u32 = 86_400; // one day
+const MIN_TIME_INTERVAL: u32 = 30;
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
@@ -129,6 +133,8 @@ impl Table {
         rows: &[usize],
         column_types: &Arc<Vec<ColumnType>>,
         r_enum_maps: &ReverseEnumMaps,
+        time_intervals: &Arc<Vec<u32>>,
+        numbers_of_top_n: &Arc<Vec<u32>>,
     ) -> Vec<Description> {
         self.columns
             .iter()
@@ -138,9 +144,28 @@ impl Table {
                     column.describe_enum(
                         rows,
                         r_enum_maps.get(&index).unwrap_or(&Arc::new(HashMap::new())),
+                        *numbers_of_top_n.get(index).unwrap_or(&DEFAULT_NUM_OF_TOP_N),
+                    )
+                } else if let ColumnType::DateTime = column_types[index] {
+                    let mut cn = 0_usize;
+                    for i in 0..index {
+                        if let ColumnType::DateTime = column_types[i] {
+                            cn += 1;
+                        }
+                    }
+                    column.describe_datetime(
+                        rows,
+                        *time_intervals.get(cn).unwrap_or(&DEFAULT_TIME_INTERVAL),
+                        *numbers_of_top_n
+                            .get(index)
+                            .unwrap_or(&DEFAULT_NUM_OF_TOP_N_OF_DATETIME),
                     )
                 } else {
-                    column.describe(rows, column_types[index])
+                    column.describe(
+                        rows,
+                        column_types[index],
+                        *numbers_of_top_n.get(index).unwrap_or(&DEFAULT_NUM_OF_TOP_N),
+                    )
                 }
             })
             .collect()
@@ -275,15 +300,16 @@ macro_rules! describe_mean_deviation {
 }
 
 macro_rules! describe_top_n {
-    ( $iter:expr, $len:expr, $d:expr, $t1:ty, $t2:expr ) => {
+    ( $iter:expr, $len:expr, $d:expr, $t1:ty, $t2:expr, $num_of_top_n:expr ) => {
         let top_n_native: Vec<(&$t1, usize)> = count_sort($iter);
         $d.count = $len;
         $d.unique_count = top_n_native.len();
         let mut top_n: Vec<(DescriptionElement, usize)> = Vec::new();
-        let top_n_num = if NUM_OF_TOP_N > top_n_native.len() {
+        let num_of_top_n = $num_of_top_n.to_usize().expect("safe: u32 -> usize");
+        let top_n_num = if num_of_top_n > top_n_native.len() {
             top_n_native.len()
         } else {
-            NUM_OF_TOP_N
+            num_of_top_n
         };
         for (x, y) in &top_n_native[0..top_n_num] {
             top_n.push(($t2((*x).to_owned()), *y));
@@ -420,8 +446,9 @@ impl Column {
         &self,
         rows: &[usize],
         reverse_map: &Arc<HashMap<u32, Vec<String>>>,
+        number_of_top_n: u32,
     ) -> Description {
-        let desc = self.describe(rows, ColumnType::Enum);
+        let desc = self.describe(rows, ColumnType::Enum, number_of_top_n);
 
         let (top_n, mode) = {
             if reverse_map.is_empty() {
@@ -525,7 +552,12 @@ impl Column {
     }
 
     #[must_use]
-    pub fn describe(&self, rows: &[usize], column_type: ColumnType) -> Description {
+    pub fn describe(
+        &self,
+        rows: &[usize],
+        column_type: ColumnType,
+        number_of_top_n: u32,
+    ) -> Description {
         let mut desc = Description::default();
 
         match column_type {
@@ -533,7 +565,14 @@ impl Column {
                 let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
                 describe_min_max!(iter, desc, DescriptionElement::Int);
                 let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
-                describe_top_n!(iter, rows.len(), desc, i64, DescriptionElement::Int);
+                describe_top_n!(
+                    iter,
+                    rows.len(),
+                    desc,
+                    i64,
+                    DescriptionElement::Int,
+                    number_of_top_n
+                );
                 let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
                 #[allow(clippy::cast_precision_loss)] // 52-bit precision is good enough
                 let f_values: Vec<f64> = iter.map(|v: &i64| *v as f64).collect();
@@ -553,7 +592,7 @@ impl Column {
                     unreachable!() // by implementation
                 };
                 let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
-                let (rc, rt) = describe_top_n_f64(iter, *min, *max);
+                let (rc, rt) = describe_top_n_f64(iter, *min, *max, number_of_top_n);
                 desc.count = rows.len();
                 desc.unique_count = rc;
                 desc.mode = Some(rt[0].0.clone());
@@ -565,15 +604,36 @@ impl Column {
             }
             ColumnType::Enum => {
                 let iter = self.view_iter::<UInt32ArrayType, u32>(rows).unwrap();
-                describe_top_n!(iter, rows.len(), desc, u32, DescriptionElement::UInt);
+                describe_top_n!(
+                    iter,
+                    rows.len(),
+                    desc,
+                    u32,
+                    DescriptionElement::UInt,
+                    number_of_top_n
+                );
             }
             ColumnType::Utf8 => {
                 let iter = self.view_iter::<Utf8ArrayType, str>(rows).unwrap();
-                describe_top_n!(iter, rows.len(), desc, str, DescriptionElement::Text);
+                describe_top_n!(
+                    iter,
+                    rows.len(),
+                    desc,
+                    str,
+                    DescriptionElement::Text,
+                    number_of_top_n
+                );
             }
             ColumnType::Binary => {
                 let iter = self.view_iter::<BinaryArrayType, [u8]>(rows).unwrap();
-                describe_top_n!(iter, rows.len(), desc, [u8], DescriptionElement::Binary);
+                describe_top_n!(
+                    iter,
+                    rows.len(),
+                    desc,
+                    [u8],
+                    DescriptionElement::Binary,
+                    number_of_top_n
+                );
             }
             ColumnType::IpAddr => {
                 let values = self
@@ -586,27 +646,58 @@ impl Column {
                     rows.len(),
                     desc,
                     IpAddr,
-                    DescriptionElement::IpAddr
+                    DescriptionElement::IpAddr,
+                    number_of_top_n
                 );
             }
-            ColumnType::DateTime => {
-                let values = self
-                    .view_iter::<Int64ArrayType, i64>(rows)
-                    .unwrap()
-                    .map(|v: &i64| {
-                        let dt = NaiveDateTime::from_timestamp(*v, 0);
-                        NaiveDateTime::new(dt.date(), NaiveTime::from_hms(dt.time().hour(), 0, 0))
-                    })
-                    .collect::<Vec<_>>();
-                describe_top_n!(
-                    values.iter(),
-                    rows.len(),
-                    desc,
-                    NaiveDateTime,
-                    DescriptionElement::DateTime
-                );
-            }
+            ColumnType::DateTime => unreachable!(), // by implementation
         }
+
+        desc
+    }
+
+    #[must_use]
+    fn describe_datetime(
+        &self,
+        rows: &[usize],
+        time_interval: u32,
+        number_of_top_n: u32,
+    ) -> Description {
+        let mut desc = Description::default();
+
+        let time_interval = if time_interval > MAX_TIME_INTERVAL {
+            MAX_TIME_INTERVAL
+        // Users want to see time series of the same order intervals within MAX_TIME_INTERVAL which is in date units.
+        // If the interval is larger than a day, it should be in date units.
+        } else {
+            time_interval
+        };
+        let time_interval = if time_interval < MIN_TIME_INTERVAL {
+            MIN_TIME_INTERVAL
+        } else {
+            time_interval
+        };
+        let time_interval = i64::from(time_interval);
+
+        let values = self
+            .view_iter::<Int64ArrayType, i64>(rows)
+            .unwrap()
+            .map(|v: &i64| {
+                // The first interval of each day should start with 00:00:00.
+                let mut ts = *v / (24 * 60 * 60) * (24 * 60 * 60);
+                ts += (*v - ts) / time_interval * time_interval;
+                NaiveDateTime::from_timestamp(ts, 0)
+            })
+            .collect::<Vec<_>>();
+
+        describe_top_n!(
+            values.iter(),
+            rows.len(),
+            desc,
+            NaiveDateTime,
+            DescriptionElement::DateTime,
+            number_of_top_n
+        );
 
         desc
     }
@@ -938,7 +1029,12 @@ where
     top_n
 }
 
-fn describe_top_n_f64<I>(iter: I, min: f64, max: f64) -> (usize, Vec<(DescriptionElement, usize)>)
+fn describe_top_n_f64<I>(
+    iter: I,
+    min: f64,
+    max: f64,
+    number_of_top_n: u32,
+) -> (usize, Vec<(DescriptionElement, usize)>)
 where
     I: Iterator,
     I::Item: Deref<Target = f64>,
@@ -964,10 +1060,11 @@ where
 
     let mut top_n: Vec<(DescriptionElement, usize)> = Vec::new();
 
-    let num_top_n = if NUM_OF_TOP_N > count.len() {
+    let number_of_top_n = number_of_top_n.to_usize().expect("safe: u32 -> usize");
+    let num_top_n = if number_of_top_n > count.len() {
         count.len()
     } else {
-        NUM_OF_TOP_N
+        number_of_top_n
     };
 
     for item in count.iter().take(num_top_n) {
@@ -1142,7 +1239,15 @@ mod tests {
             ColumnType::Binary,
         ]);
         let rows = vec![0_usize, 3, 1, 4, 2, 6, 5];
-        let ds = table.describe(&rows, &column_types, &reverse_enum_maps(&HashMap::new()));
+        let time_intervals = Arc::new(Vec::new());
+        let numbers_of_top_n = Arc::new(Vec::new());
+        let ds = table.describe(
+            &rows,
+            &column_types,
+            &reverse_enum_maps(&HashMap::new()),
+            &time_intervals,
+            &numbers_of_top_n,
+        );
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
@@ -1170,7 +1275,13 @@ mod tests {
         c5_map.insert(7, "t3".to_string());
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
-        let ds = table.describe(&rows, &column_types, &reverse_enum_maps(&labels));
+        let ds = table.describe(
+            &rows,
+            &column_types,
+            &reverse_enum_maps(&labels),
+            &time_intervals,
+            &numbers_of_top_n,
+        );
 
         assert_eq!(4, ds[0].unique_count);
         assert_eq!(
