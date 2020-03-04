@@ -292,7 +292,7 @@ impl Field {
 }
 
 /// Describes the meta-data of an ordered sequence of relative types.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Schema {
     fields: Vec<Field>,
     /// A map of key-value pairs containing additional meta data.
