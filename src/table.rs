@@ -8,7 +8,7 @@ use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use statistical::*;
 use std::collections::{HashMap, HashSet};
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::fmt;
 use std::hash::Hash;
 use std::iter::{Flatten, Iterator};
@@ -61,34 +61,39 @@ impl Into<DataType> for ColumnType {
 /// Structured data represented in a column-oriented form.
 #[derive(Debug, Default, Clone)]
 pub struct Table {
+    schema: Arc<Schema>,
     columns: Vec<Column>,
     event_ids: HashMap<u64, usize>,
 }
 
 impl Table {
-    #[must_use]
-    pub fn new(columns: Vec<Column>, event_ids: HashMap<u64, usize>) -> Self {
-        Self { columns, event_ids }
-    }
-
-    #[must_use]
-    pub fn from_schema(schema: &Schema) -> Self {
-        let columns = schema
-            .fields()
-            .iter()
-            .map(|field| match field.data_type() {
-                DataType::Int32 => Column::new::<i32>(),
-                DataType::Int64 | DataType::Timestamp(_) => Column::new::<i64>(),
-                DataType::UInt8 => Column::new::<u8>(),
-                DataType::UInt32 => Column::new::<u32>(),
-                DataType::Float64 => Column::new::<f64>(),
-                DataType::Utf8 => Column::new::<String>(),
-                DataType::Binary => Column::new::<Vec<u8>>(),
+    /// Creates a new `Table` with the given `schema` and `columns`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `columns` have different lengths.
+    pub fn new(
+        schema: Arc<Schema>,
+        columns: Vec<Column>,
+        event_ids: HashMap<u64, usize>,
+    ) -> Result<Self, &'static str> {
+        let len = if let Some(col) = columns.first() {
+            col.len()
+        } else {
+            return Ok(Self {
+                schema,
+                columns,
+                event_ids: HashMap::new(),
+            });
+        };
+        if columns.iter().skip(1).all(|c| c.len() == len) {
+            Ok(Self {
+                schema,
+                columns,
+                event_ids,
             })
-            .collect();
-        Self {
-            columns,
-            event_ids: HashMap::new(),
+        } else {
+            Err("columns must have the same length")
         }
     }
 
@@ -256,29 +261,6 @@ impl Table {
     }
 }
 
-impl TryFrom<Vec<Column>> for Table {
-    type Error = &'static str;
-
-    fn try_from(columns: Vec<Column>) -> Result<Self, Self::Error> {
-        let len = if let Some(col) = columns.first() {
-            col.len()
-        } else {
-            return Ok(Self {
-                columns,
-                event_ids: HashMap::new(),
-            });
-        };
-        if columns.iter().skip(1).all(|e| e.len() == len) {
-            Ok(Self {
-                columns,
-                event_ids: HashMap::new(),
-            })
-        } else {
-            Err("columns must have the same length")
-        }
-    }
-}
-
 macro_rules! describe_min_max {
     ( $iter:expr, $d:expr, $t2:expr ) => {{
         if let Some(minmax) = find_min_max($iter) {
@@ -320,7 +302,7 @@ macro_rules! describe_top_n {
 }
 
 /// A single column in a table.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Column {
     arrays: Vec<Arc<dyn Array>>,
     cumlen: Vec<usize>,
@@ -328,18 +310,6 @@ pub struct Column {
 }
 
 impl Column {
-    #[must_use]
-    pub fn new<T>() -> Self
-    where
-        T: Send + Sync + 'static,
-    {
-        Self {
-            arrays: Vec::new(),
-            cumlen: vec![0],
-            len: 0,
-        }
-    }
-
     /// Converts a slice into a `Column`.
     ///
     /// # Errors
@@ -1120,25 +1090,27 @@ mod tests {
     use std::net::Ipv4Addr;
 
     #[test]
-    fn table_new() {
-        let table = Table::new(Vec::new(), HashMap::new());
+    fn table_try_default() {
+        let table = Table::default();
         assert_eq!(table.num_columns(), 0);
         assert_eq!(table.num_rows(), 0);
     }
 
     #[test]
-    fn table_try_from() {
-        let table = Table::try_from(Vec::new());
-        assert!(table.is_ok());
+    fn table_new() {
+        let table = Table::new(Arc::new(Schema::default()), Vec::new(), HashMap::new())
+            .expect("creating an empty `Table` should not fail");
+        assert_eq!(table.num_columns(), 0);
+        assert_eq!(table.num_rows(), 0);
     }
 
     #[test]
     fn column_new() {
-        let column = Column::new::<UInt32ArrayType>();
+        let column = Column::default();
         assert_eq!(column.len(), 0);
         assert_eq!(column.try_get::<UInt32ArrayType, u32>(0), Ok(None));
 
-        let column = Column::new::<Utf8ArrayType>();
+        let column = Column::default();
         assert_eq!(column.len(), 0);
         assert_eq!(column.try_get::<Utf8ArrayType, str>(0), Ok(None));
     }
@@ -1172,6 +1144,15 @@ mod tests {
 
     #[test]
     fn description_test() {
+        let schema = Schema::new(vec![
+            Field::new(DataType::Int64),
+            Field::new(DataType::Utf8),
+            Field::new(DataType::UInt32),
+            Field::new(DataType::Float64),
+            Field::new(DataType::Timestamp(TimeUnit::Second)),
+            Field::new(DataType::UInt32),
+            Field::new(DataType::Binary),
+        ]);
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
         let c1_v: Vec<_> = vec!["111a qwer", "b", "c", "d", "b", "111a qwer", "111a qwer"];
         let c2_v: Vec<u32> = vec![
@@ -1228,7 +1209,7 @@ mod tests {
         let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::try_from(c6_v.as_slice()).unwrap());
         let c6 = Column::from(c6_a);
         let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
-        let table = Table::try_from(c_v).expect("invalid columns");
+        let table = Table::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
         let column_types = Arc::new(vec![
             ColumnType::Int64,
             ColumnType::Utf8,
