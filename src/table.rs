@@ -286,7 +286,7 @@ macro_rules! describe_top_n {
         let top_n_native: Vec<(&$t1, usize)> = count_sort($iter);
         $d.count = $len;
         $d.unique_count = top_n_native.len();
-        let mut top_n: Vec<(DescriptionElement, usize)> = Vec::new();
+        let mut top_n: Vec<ElemOfTopN> = Vec::new();
         let num_of_top_n = $num_of_top_n.to_usize().expect("safe: u32 -> usize");
         let top_n_num = if num_of_top_n > top_n_native.len() {
             top_n_native.len()
@@ -294,9 +294,12 @@ macro_rules! describe_top_n {
             num_of_top_n
         };
         for (x, y) in &top_n_native[0..top_n_num] {
-            top_n.push(($t2((*x).to_owned()), *y));
+            top_n.push(ElemOfTopN {
+                value: $t2((*x).to_owned()),
+                count: *y,
+            });
         }
-        $d.mode = Some(top_n[0].0.clone());
+        $d.mode = Some(top_n[0].value.clone());
         $d.top_n = Some(top_n);
     };
 }
@@ -412,6 +415,7 @@ impl Column {
     }
 
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn describe_enum(
         &self,
         rows: &[usize],
@@ -427,11 +431,17 @@ impl Column {
                         Some(top_n) => Some(
                             top_n
                                 .iter()
-                                .map(|(v, c)| {
-                                    if let DescriptionElement::UInt(value) = v {
-                                        (DescriptionElement::Enum(value.to_string()), *c)
+                                .map(|elem| {
+                                    if let DescriptionElement::UInt(value) = elem.value {
+                                        ElemOfTopN {
+                                            value: DescriptionElement::Enum(value.to_string()),
+                                            count: elem.count,
+                                        }
                                     } else {
-                                        (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                                        ElemOfTopN {
+                                            value: DescriptionElement::Enum("_N/A_".to_string()),
+                                            count: elem.count,
+                                        }
                                     }
                                 })
                                 .collect(),
@@ -455,11 +465,11 @@ impl Column {
                         Some(top_n) => Some(
                             top_n
                                 .iter()
-                                .map(|(v, c)| {
-                                    if let DescriptionElement::UInt(value) = v {
-                                        (
-                                            DescriptionElement::Enum(
-                                                reverse_map.get(value).map_or(
+                                .map(|elem| {
+                                    if let DescriptionElement::UInt(value) = elem.value {
+                                        (ElemOfTopN {
+                                            value: DescriptionElement::Enum(
+                                                reverse_map.get(&value).map_or(
                                                     "_NO_MAP_".to_string(),
                                                     |v| {
                                                         let mut s = String::new();
@@ -473,10 +483,13 @@ impl Column {
                                                     },
                                                 ),
                                             ),
-                                            *c,
-                                        )
+                                            count: elem.count,
+                                        })
                                     } else {
-                                        (DescriptionElement::Enum("_N/A_".to_string()), *c)
+                                        ElemOfTopN {
+                                            value: DescriptionElement::Enum("_N/A_".to_string()),
+                                            count: elem.count,
+                                        }
                                     }
                                 })
                                 .collect(),
@@ -565,7 +578,7 @@ impl Column {
                 let (rc, rt) = describe_top_n_f64(iter, *min, *max, number_of_top_n);
                 desc.count = rows.len();
                 desc.unique_count = rc;
-                desc.mode = Some(rt[0].0.clone());
+                desc.mode = Some(rt[0].value.clone());
                 desc.top_n = Some(rt);
 
                 let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
@@ -861,11 +874,17 @@ pub enum DescriptionElement {
     UInt(u32),
     Enum(String), // describe() converts UInt -> Enum using enum maps. Without maps, by to_string().
     Float(f64),
-    FloatRange(f64, f64),
+    FloatRange(FloatRange),
     Text(String),
     Binary(Vec<u8>),
     IpAddr(IpAddr),
     DateTime(NaiveDateTime),
+}
+
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FloatRange {
+    smallest: f64,
+    largest: f64,
 }
 
 impl fmt::Display for DescriptionElement {
@@ -876,7 +895,7 @@ impl fmt::Display for DescriptionElement {
             Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
             Self::Binary(x) => write!(f, "{:#?}", x),
             Self::Float(x) => write!(f, "{}", x),
-            Self::FloatRange(x, y) => write!(f, "({} - {})", x, y),
+            Self::FloatRange(x) => write!(f, "({} - {})", x.smallest, x.largest),
             Self::IpAddr(x) => write!(f, "{}", x),
             Self::DateTime(x) => write!(f, "{}", x),
         }
@@ -892,8 +911,14 @@ pub struct Description {
     s_deviation: Option<f64>,
     min: Option<DescriptionElement>,
     max: Option<DescriptionElement>,
-    top_n: Option<Vec<(DescriptionElement, usize)>>,
+    top_n: Option<Vec<ElemOfTopN>>,
     mode: Option<DescriptionElement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ElemOfTopN {
+    value: DescriptionElement,
+    count: usize,
 }
 
 impl fmt::Display for Description {
@@ -914,8 +939,8 @@ impl fmt::Display for Description {
             writeln!(f, "   max: {}", self.get_max().unwrap())?;
         }
         writeln!(f, "   Top N")?;
-        for (d, c) in self.get_top_n().unwrap() {
-            writeln!(f, "      data: {}      count: {}", d, c)?;
+        for elem in self.get_top_n().unwrap() {
+            writeln!(f, "      data: {}      count: {}", elem.value, elem.count)?;
         }
         if self.mode.is_some() {
             writeln!(f, "   mode: {}", self.get_mode().unwrap())?;
@@ -971,7 +996,7 @@ impl Description {
     }
 
     #[must_use]
-    pub fn get_top_n(&self) -> Option<&Vec<(DescriptionElement, usize)>> {
+    pub fn get_top_n(&self) -> Option<&Vec<ElemOfTopN>> {
         self.top_n.as_ref()
     }
 
@@ -1004,7 +1029,7 @@ fn describe_top_n_f64<I>(
     min: f64,
     max: f64,
     number_of_top_n: u32,
-) -> (usize, Vec<(DescriptionElement, usize)>)
+) -> (usize, Vec<ElemOfTopN>)
 where
     I: Iterator,
     I::Item: Deref<Target = f64>,
@@ -1028,7 +1053,7 @@ where
 
     count.sort_unstable_by(|a, b| b.1.cmp(&a.1));
 
-    let mut top_n: Vec<(DescriptionElement, usize)> = Vec::new();
+    let mut top_n: Vec<ElemOfTopN> = Vec::new();
 
     let number_of_top_n = number_of_top_n.to_usize().expect("safe: u32 -> usize");
     let num_top_n = if number_of_top_n > count.len() {
@@ -1041,13 +1066,13 @@ where
         if item.1 == 0 {
             break;
         }
-        top_n.push((
-            DescriptionElement::FloatRange(
-                min + (item.0).to_f64().expect("< 30") * interval,
-                min + (item.0 + 1).to_f64().expect("<= 30") * interval,
-            ),
-            item.1,
-        ));
+        top_n.push(ElemOfTopN {
+            value: DescriptionElement::FloatRange(FloatRange {
+                smallest: min + (item.0).to_f64().expect("< 30") * interval,
+                largest: min + (item.0 + 1).to_f64().expect("<= 30") * interval,
+            }),
+            count: item.1,
+        });
     }
     (count.len(), top_n)
 }
@@ -1237,12 +1262,12 @@ mod tests {
         );
         assert_eq!(
             DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
-            ds[2].get_top_n().unwrap()[1].0
+            ds[2].get_top_n().unwrap()[1].value
         );
         assert_eq!(3, ds[3].unique_count);
         assert_eq!(
             DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
-            ds[4].get_top_n().unwrap()[0].0
+            ds[4].get_top_n().unwrap()[0].value
         );
         assert_eq!(3, ds[5].unique_count);
         assert_eq!(
@@ -1271,12 +1296,12 @@ mod tests {
         );
         assert_eq!(
             DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
-            ds[2].get_top_n().unwrap()[1].0
+            ds[2].get_top_n().unwrap()[1].value
         );
         assert_eq!(3, ds[3].unique_count);
         assert_eq!(
             DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
-            ds[4].get_top_n().unwrap()[0].0
+            ds[4].get_top_n().unwrap()[0].value
         );
         assert_eq!(
             DescriptionElement::Enum("t2".to_string()),
