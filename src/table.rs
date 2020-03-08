@@ -286,7 +286,7 @@ macro_rules! describe_top_n {
         let top_n_native: Vec<(&$t1, usize)> = count_sort($iter);
         $d.count = $len;
         $d.unique_count = top_n_native.len();
-        let mut top_n: Vec<ElemOfTopN> = Vec::new();
+        let mut top_n: Vec<TopNElement> = Vec::new();
         let num_of_top_n = $num_of_top_n.to_usize().expect("safe: u32 -> usize");
         let top_n_num = if num_of_top_n > top_n_native.len() {
             top_n_native.len()
@@ -294,7 +294,7 @@ macro_rules! describe_top_n {
             num_of_top_n
         };
         for (x, y) in &top_n_native[0..top_n_num] {
-            top_n.push(ElemOfTopN {
+            top_n.push(TopNElement {
                 value: $t2((*x).to_owned()),
                 count: *y,
             });
@@ -433,12 +433,12 @@ impl Column {
                                 .iter()
                                 .map(|elem| {
                                     if let DescriptionElement::UInt(value) = elem.value {
-                                        ElemOfTopN {
+                                        TopNElement {
                                             value: DescriptionElement::Enum(value.to_string()),
                                             count: elem.count,
                                         }
                                     } else {
-                                        ElemOfTopN {
+                                        TopNElement {
                                             value: DescriptionElement::Enum("_N/A_".to_string()),
                                             count: elem.count,
                                         }
@@ -467,7 +467,7 @@ impl Column {
                                 .iter()
                                 .map(|elem| {
                                     if let DescriptionElement::UInt(value) = elem.value {
-                                        (ElemOfTopN {
+                                        (TopNElement {
                                             value: DescriptionElement::Enum(
                                                 reverse_map.get(&value).map_or(
                                                     "_NO_MAP_".to_string(),
@@ -486,7 +486,7 @@ impl Column {
                                             count: elem.count,
                                         })
                                     } else {
-                                        ElemOfTopN {
+                                        TopNElement {
                                             value: DescriptionElement::Enum("_N/A_".to_string()),
                                             count: elem.count,
                                         }
@@ -911,12 +911,12 @@ pub struct Description {
     s_deviation: Option<f64>,
     min: Option<DescriptionElement>,
     max: Option<DescriptionElement>,
-    top_n: Option<Vec<ElemOfTopN>>,
+    top_n: Option<Vec<TopNElement>>,
     mode: Option<DescriptionElement>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ElemOfTopN {
+pub struct TopNElement {
     value: DescriptionElement,
     count: usize,
 }
@@ -996,7 +996,7 @@ impl Description {
     }
 
     #[must_use]
-    pub fn get_top_n(&self) -> Option<&Vec<ElemOfTopN>> {
+    pub fn get_top_n(&self) -> Option<&Vec<TopNElement>> {
         self.top_n.as_ref()
     }
 
@@ -1029,7 +1029,7 @@ fn describe_top_n_f64<I>(
     min: f64,
     max: f64,
     number_of_top_n: u32,
-) -> (usize, Vec<ElemOfTopN>)
+) -> (usize, Vec<TopNElement>)
 where
     I: Iterator,
     I::Item: Deref<Target = f64>,
@@ -1053,7 +1053,7 @@ where
 
     count.sort_unstable_by(|a, b| b.1.cmp(&a.1));
 
-    let mut top_n: Vec<ElemOfTopN> = Vec::new();
+    let mut top_n: Vec<TopNElement> = Vec::new();
 
     let number_of_top_n = number_of_top_n.to_usize().expect("safe: u32 -> usize");
     let num_top_n = if number_of_top_n > count.len() {
@@ -1066,7 +1066,7 @@ where
         if item.1 == 0 {
             break;
         }
-        top_n.push(ElemOfTopN {
+        top_n.push(TopNElement {
             value: DescriptionElement::FloatRange(FloatRange {
                 smallest: min + (item.0).to_f64().expect("< 30") * interval,
                 largest: min + (item.0 + 1).to_f64().expect("<= 30") * interval,
