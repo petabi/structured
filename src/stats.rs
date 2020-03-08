@@ -56,7 +56,7 @@ impl fmt::Display for Element {
 }
 
 /// Statistical summary of data of the same type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ColumnStatistics {
     pub description: Description,
     pub n_largest_count: NLargestCount,
