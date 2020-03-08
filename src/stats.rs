@@ -267,7 +267,7 @@ pub(crate) fn describe(column: &Column, rows: &[usize], column_type: ColumnType)
 }
 
 #[must_use]
-pub(crate) fn get_n_largest_count(
+pub(crate) fn n_largest_count(
     column: &Column,
     rows: &[usize],
     column_type: ColumnType,
@@ -343,13 +343,13 @@ pub(crate) fn get_n_largest_count(
 
 #[must_use]
 #[allow(clippy::too_many_lines)]
-pub(crate) fn get_n_largest_count_enum(
+pub(crate) fn n_largest_count_enum(
     column: &Column,
     rows: &[usize],
     reverse_map: &Arc<HashMap<u32, Vec<String>>>,
     number_of_top_n: u32,
 ) -> NLargestCount {
-    let n_largest_count = get_n_largest_count(column, rows, ColumnType::Enum, number_of_top_n);
+    let n_largest_count = n_largest_count(column, rows, ColumnType::Enum, number_of_top_n);
 
     let (top_n, mode) = {
         if reverse_map.is_empty() {
@@ -455,7 +455,7 @@ pub(crate) fn get_n_largest_count_enum(
 }
 
 #[must_use]
-pub(crate) fn get_n_largest_count_float64(
+pub(crate) fn n_largest_count_float64(
     column: &Column,
     rows: &[usize],
     number_of_top_n: u32,
@@ -474,7 +474,7 @@ pub(crate) fn get_n_largest_count_float64(
 }
 
 #[must_use]
-pub(crate) fn get_n_largest_count_datetime(
+pub(crate) fn n_largest_count_datetime(
     column: &Column,
     rows: &[usize],
     time_interval: u32,
