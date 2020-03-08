@@ -13,7 +13,6 @@ pub use datatypes::{
     UInt32Type, UInt8Type,
 };
 pub use table::{
-    BinaryArrayType, Column, ColumnType, Description, DescriptionElement, Float64ArrayType,
-    Int32ArrayType, Int64ArrayType, Table, UInt32ArrayType, UInt8ArrayType, Utf8ArrayType,
-    DEFAULT_NUM_OF_TOP_N,
+    BinaryArrayType, Column, ColumnType, Description, Element, Float64ArrayType, Int32ArrayType,
+    Int64ArrayType, Table, UInt32ArrayType, UInt8ArrayType, Utf8ArrayType, DEFAULT_NUM_OF_TOP_N,
 };
