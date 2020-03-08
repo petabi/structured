@@ -16,8 +16,8 @@ use std::vec;
 use strum_macros::EnumString;
 
 use crate::stats::{
-    describe, get_n_largest_count, get_n_largest_count_datetime, get_n_largest_count_enum,
-    get_n_largest_count_float64, ColumnStatistics, Element, NLargestCount,
+    describe, n_largest_count, n_largest_count_datetime, n_largest_count_enum,
+    n_largest_count_float64, ColumnStatistics, Element, NLargestCount,
 };
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
@@ -126,7 +126,7 @@ impl Table {
     }
 
     #[must_use]
-    pub fn get_statistics(
+    pub fn statistics(
         &self,
         rows: &[usize],
         column_types: &Arc<Vec<ColumnType>>,
@@ -140,7 +140,7 @@ impl Table {
             .map(|(index, column)| {
                 let description = describe(column, rows, column_types[index]);
                 let n_largest_count = if let ColumnType::Enum = column_types[index] {
-                    get_n_largest_count_enum(
+                    n_largest_count_enum(
                         column,
                         rows,
                         r_enum_maps.get(&index).unwrap_or(&Arc::new(HashMap::new())),
@@ -155,7 +155,7 @@ impl Table {
                             cn += 1;
                         }
                     }
-                    get_n_largest_count_datetime(
+                    n_largest_count_datetime(
                         column,
                         rows,
                         *time_intervals
@@ -169,7 +169,7 @@ impl Table {
                     if let (Some(Element::Float(min)), Some(Element::Float(max))) =
                         (description.get_min(), description.get_max())
                     {
-                        get_n_largest_count_float64(
+                        n_largest_count_float64(
                             column,
                             rows,
                             *numbers_of_top_n
@@ -182,7 +182,7 @@ impl Table {
                         NLargestCount::default()
                     }
                 } else {
-                    get_n_largest_count(
+                    n_largest_count(
                         column,
                         rows,
                         column_types[index],
@@ -718,7 +718,7 @@ mod tests {
         let rows = vec![0_usize, 3, 1, 4, 2, 6, 5];
         let time_intervals = Arc::new(vec![3600]);
         let numbers_of_top_n = Arc::new(vec![10; 7]);
-        let stat = table.get_statistics(
+        let stat = table.statistics(
             &rows,
             &column_types,
             &reverse_enum_maps(&HashMap::new()),
@@ -752,7 +752,7 @@ mod tests {
         c5_map.insert(7, "t3".to_string());
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
-        let stat = table.get_statistics(
+        let stat = table.statistics(
             &rows,
             &column_types,
             &reverse_enum_maps(&labels),
