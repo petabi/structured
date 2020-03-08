@@ -2,30 +2,23 @@ use crate::array::*;
 use crate::datatypes::*;
 use crate::memory::AllocationError;
 use crate::{DataType, Schema};
-use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
-use statistical::*;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
-use std::fmt;
-use std::hash::Hash;
 use std::iter::{Flatten, Iterator};
 use std::marker::PhantomData;
-use std::net::{IpAddr, Ipv4Addr};
-use std::ops::{Deref, Index};
+use std::ops::Index;
 use std::slice;
 use std::sync::Arc;
 use std::vec;
 use strum_macros::EnumString;
 
-pub const DEFAULT_NUM_OF_TOP_N: u32 = 30;
-const DEFAULT_NUM_OF_TOP_N_OF_DATETIME: u32 = 336; // 24 hours x 14 days
-const NUM_OF_FLOAT_INTERVALS: usize = 100;
-const DEFAULT_TIME_INTERVAL: u32 = 3600; // seconds
-const MAX_TIME_INTERVAL: u32 = 86_400; // one day
-const MIN_TIME_INTERVAL: u32 = 30;
+use crate::stats::{
+    describe, get_n_largest_count, get_n_largest_count_datetime, get_n_largest_count_enum,
+    get_n_largest_count_float64, ColumnStatistics, Element, NLargestCount,
+};
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
@@ -145,12 +138,15 @@ impl Table {
             .iter()
             .enumerate()
             .map(|(index, column)| {
-                let description = column.describe(rows, column_types[index]);
+                let description = describe(column, rows, column_types[index]);
                 let n_largest_count = if let ColumnType::Enum = column_types[index] {
-                    column.get_n_largest_count_enum(
+                    get_n_largest_count_enum(
+                        column,
                         rows,
                         r_enum_maps.get(&index).unwrap_or(&Arc::new(HashMap::new())),
-                        *numbers_of_top_n.get(index).unwrap_or(&DEFAULT_NUM_OF_TOP_N),
+                        *numbers_of_top_n
+                            .get(index)
+                            .expect("top N number for each column should exist."),
                     )
                 } else if let ColumnType::DateTime = column_types[index] {
                     let mut cn = 0_usize;
@@ -159,20 +155,26 @@ impl Table {
                             cn += 1;
                         }
                     }
-                    column.get_n_larget_count_datetime(
+                    get_n_largest_count_datetime(
+                        column,
                         rows,
-                        *time_intervals.get(cn).unwrap_or(&DEFAULT_TIME_INTERVAL),
+                        *time_intervals
+                            .get(cn)
+                            .expect("time intervals should exist."),
                         *numbers_of_top_n
                             .get(index)
-                            .unwrap_or(&DEFAULT_NUM_OF_TOP_N_OF_DATETIME),
+                            .expect("top N number for each column should exist."),
                     )
                 } else if let ColumnType::Float64 = column_types[index] {
                     if let (Some(Element::Float(min)), Some(Element::Float(max))) =
                         (description.get_min(), description.get_max())
                     {
-                        column.get_n_largest_count_float64(
+                        get_n_largest_count_float64(
+                            column,
                             rows,
-                            *numbers_of_top_n.get(index).unwrap_or(&DEFAULT_NUM_OF_TOP_N),
+                            *numbers_of_top_n
+                                .get(index)
+                                .expect("top N number for each column should exist."),
                             *min,
                             *max,
                         )
@@ -180,10 +182,13 @@ impl Table {
                         NLargestCount::default()
                     }
                 } else {
-                    column.get_n_largest_count(
+                    get_n_largest_count(
+                        column,
                         rows,
                         column_types[index],
-                        *numbers_of_top_n.get(index).unwrap_or(&DEFAULT_NUM_OF_TOP_N),
+                        *numbers_of_top_n
+                            .get(index)
+                            .expect("top N number for each column should exist."),
                     )
                 };
 
@@ -278,48 +283,6 @@ impl Table {
         col.arrays.push(builder.build());
         Ok(())
     }
-}
-
-macro_rules! describe_min_max {
-    ( $iter:expr, $d:expr, $t2:expr ) => {{
-        if let Some(minmax) = find_min_max($iter) {
-            $d.min = Some($t2(minmax.min));
-            $d.max = Some($t2(minmax.max));
-        } else {
-            $d.min = None;
-            $d.max = None;
-        }
-    }};
-}
-
-macro_rules! describe_mean_deviation {
-    ( $vf:expr, $t1:ty, $d:expr ) => {
-        let m = mean(&$vf);
-        $d.mean = Some(m);
-        $d.s_deviation = Some(population_standard_deviation(&$vf, Some(m)));
-    };
-}
-
-macro_rules! describe_top_n {
-    ( $iter:expr, $len:expr, $d:expr, $t1:ty, $t2:expr, $num_of_top_n:expr ) => {
-        let top_n_native: Vec<(&$t1, usize)> = count_sort($iter);
-        $d.number_of_elements = top_n_native.len();
-        let mut top_n: Vec<ElementCount> = Vec::new();
-        let num_of_top_n = $num_of_top_n.to_usize().expect("safe: u32 -> usize");
-        let top_n_num = if num_of_top_n > top_n_native.len() {
-            top_n_native.len()
-        } else {
-            num_of_top_n
-        };
-        for (x, y) in &top_n_native[0..top_n_num] {
-            top_n.push(ElementCount {
-                value: $t2((*x).to_owned()),
-                count: *y,
-            });
-        }
-        $d.mode = Some(top_n[0].value.clone());
-        $d.top_n = Some(top_n);
-    };
 }
 
 /// A single column in a table.
@@ -430,265 +393,6 @@ impl Column {
             arrays.push(typed_arr);
         }
         Ok(ViewIter::new(self, selected.iter()))
-    }
-
-    #[must_use]
-    #[allow(clippy::too_many_lines)]
-    pub fn get_n_largest_count_enum(
-        &self,
-        rows: &[usize],
-        reverse_map: &Arc<HashMap<u32, Vec<String>>>,
-        number_of_top_n: u32,
-    ) -> NLargestCount {
-        let desc = self.get_n_largest_count(rows, ColumnType::Enum, number_of_top_n);
-
-        let (top_n, mode) = {
-            if reverse_map.is_empty() {
-                (
-                    match desc.get_top_n() {
-                        Some(top_n) => Some(
-                            top_n
-                                .iter()
-                                .map(|elem| {
-                                    if let Element::UInt(value) = elem.value {
-                                        ElementCount {
-                                            value: Element::Enum(value.to_string()),
-                                            count: elem.count,
-                                        }
-                                    } else {
-                                        ElementCount {
-                                            value: Element::Enum("_N/A_".to_string()),
-                                            count: elem.count,
-                                        }
-                                    }
-                                })
-                                .collect(),
-                        ),
-                        None => None,
-                    },
-                    match desc.get_mode() {
-                        Some(mode) => {
-                            if let Element::UInt(value) = mode {
-                                Some(Element::Enum(value.to_string()))
-                            } else {
-                                None
-                            }
-                        }
-                        None => None,
-                    },
-                )
-            } else {
-                (
-                    match desc.get_top_n() {
-                        Some(top_n) => Some(
-                            top_n
-                                .iter()
-                                .map(|elem| {
-                                    if let Element::UInt(value) = elem.value {
-                                        (ElementCount {
-                                            value: Element::Enum(reverse_map.get(&value).map_or(
-                                                "_NO_MAP_".to_string(),
-                                                |v| {
-                                                    let mut s = String::new();
-                                                    for (i, e) in v.iter().enumerate() {
-                                                        s.push_str(e);
-                                                        if i < v.len() - 1 {
-                                                            s.push_str("|")
-                                                        }
-                                                    }
-                                                    s
-                                                },
-                                            )),
-                                            count: elem.count,
-                                        })
-                                    } else {
-                                        ElementCount {
-                                            value: Element::Enum("_N/A_".to_string()),
-                                            count: elem.count,
-                                        }
-                                    }
-                                })
-                                .collect(),
-                        ),
-                        None => None,
-                    },
-                    match desc.get_mode() {
-                        Some(mode) => {
-                            if let Element::UInt(value) = mode {
-                                Some(Element::Enum(reverse_map.get(value).map_or(
-                                    "_NO_MAP_".to_string(),
-                                    |v| {
-                                        let mut s = String::new();
-                                        for (i, e) in v.iter().enumerate() {
-                                            s.push_str(e);
-                                            if i < v.len() - 1 {
-                                                s.push_str("|")
-                                            }
-                                        }
-                                        s
-                                    },
-                                )))
-                            } else {
-                                None
-                            }
-                        }
-                        None => None,
-                    },
-                )
-            }
-        };
-
-        NLargestCount {
-            number_of_elements: desc.get_number_of_elements(),
-            top_n,
-            mode,
-        }
-    }
-
-    #[must_use]
-    pub fn describe(&self, rows: &[usize], column_type: ColumnType) -> Description {
-        let mut desc = Description::default();
-
-        desc.count = rows.len();
-        match column_type {
-            ColumnType::Int64 => {
-                let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
-                describe_min_max!(iter, desc, Element::Int);
-                let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
-                #[allow(clippy::cast_precision_loss)] // 52-bit precision is good enough
-                let f_values: Vec<f64> = iter.map(|v: &i64| *v as f64).collect();
-                describe_mean_deviation!(f_values, i64, desc);
-            }
-            ColumnType::Float64 => {
-                let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
-                describe_min_max!(iter, desc, Element::Float);
-                let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
-                let values = iter.cloned().collect::<Vec<_>>();
-                describe_mean_deviation!(values, f64, desc);
-            }
-            _ => (),
-        }
-
-        desc
-    }
-
-    #[must_use]
-    pub fn get_n_largest_count(
-        &self,
-        rows: &[usize],
-        column_type: ColumnType,
-        number_of_top_n: u32,
-    ) -> NLargestCount {
-        let mut desc = NLargestCount::default();
-
-        match column_type {
-            ColumnType::Int64 => {
-                let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
-                describe_top_n!(iter, rows.len(), desc, i64, Element::Int, number_of_top_n);
-            }
-            ColumnType::Enum => {
-                let iter = self.view_iter::<UInt32ArrayType, u32>(rows).unwrap();
-                describe_top_n!(iter, rows.len(), desc, u32, Element::UInt, number_of_top_n);
-            }
-            ColumnType::Utf8 => {
-                let iter = self.view_iter::<Utf8ArrayType, str>(rows).unwrap();
-                describe_top_n!(iter, rows.len(), desc, str, Element::Text, number_of_top_n);
-            }
-            ColumnType::Binary => {
-                let iter = self.view_iter::<BinaryArrayType, [u8]>(rows).unwrap();
-                describe_top_n!(
-                    iter,
-                    rows.len(),
-                    desc,
-                    [u8],
-                    Element::Binary,
-                    number_of_top_n
-                );
-            }
-            ColumnType::IpAddr => {
-                let values = self
-                    .view_iter::<UInt32ArrayType, u32>(rows)
-                    .unwrap()
-                    .map(|v: &u32| IpAddr::from(Ipv4Addr::from(*v)))
-                    .collect::<Vec<_>>();
-                describe_top_n!(
-                    values.iter(),
-                    rows.len(),
-                    desc,
-                    IpAddr,
-                    Element::IpAddr,
-                    number_of_top_n
-                );
-            }
-            ColumnType::DateTime | ColumnType::Float64 => unreachable!(), // by implementation
-        }
-
-        desc
-    }
-
-    #[must_use]
-    fn get_n_largest_count_float64(
-        &self,
-        rows: &[usize],
-        number_of_top_n: u32,
-        min: f64,
-        max: f64,
-    ) -> NLargestCount {
-        let mut desc = NLargestCount::default();
-
-        let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
-        let (rc, rt) = describe_top_n_f64(iter, min, max, number_of_top_n);
-        desc.number_of_elements = rc;
-        desc.mode = Some(rt[0].value.clone());
-        desc.top_n = Some(rt);
-
-        desc
-    }
-
-    #[must_use]
-    fn get_n_larget_count_datetime(
-        &self,
-        rows: &[usize],
-        time_interval: u32,
-        number_of_top_n: u32,
-    ) -> NLargestCount {
-        let mut desc = NLargestCount::default();
-
-        let time_interval = if time_interval > MAX_TIME_INTERVAL {
-            MAX_TIME_INTERVAL
-        // Users want to see time series of the same order intervals within MAX_TIME_INTERVAL which is in date units.
-        // If the interval is larger than a day, it should be in date units.
-        } else {
-            time_interval
-        };
-        let time_interval = if time_interval < MIN_TIME_INTERVAL {
-            MIN_TIME_INTERVAL
-        } else {
-            time_interval
-        };
-        let time_interval = i64::from(time_interval);
-
-        let values = self
-            .view_iter::<Int64ArrayType, i64>(rows)
-            .unwrap()
-            .map(|v: &i64| {
-                // The first interval of each day should start with 00:00:00.
-                let mut ts = *v / (24 * 60 * 60) * (24 * 60 * 60);
-                ts += (*v - ts) / time_interval * time_interval;
-                NaiveDateTime::from_timestamp(ts, 0)
-            })
-            .collect::<Vec<_>>();
-
-        describe_top_n!(
-            values.iter(),
-            rows.len(),
-            desc,
-            NaiveDateTime,
-            Element::DateTime,
-            number_of_top_n
-        );
-        // TODO: rename desc
-        desc
     }
 }
 
@@ -873,275 +577,13 @@ where
     }
 }
 
-/// The underlying data type of a column description.
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum Element {
-    Int(i64),
-    UInt(u32),
-    Enum(String), // describe() converts UInt -> Enum using enum maps. Without maps, by to_string().
-    Float(f64),
-    FloatRange(FloatRange),
-    Text(String),
-    Binary(Vec<u8>),
-    IpAddr(IpAddr),
-    DateTime(NaiveDateTime),
-}
-
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
-pub struct FloatRange {
-    smallest: f64,
-    largest: f64,
-}
-
-impl fmt::Display for Element {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Int(x) => write!(f, "{}", x),
-            Self::UInt(x) => write!(f, "{}", x),
-            Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
-            Self::Binary(x) => write!(f, "{:#?}", x),
-            Self::Float(x) => write!(f, "{}", x),
-            Self::FloatRange(x) => write!(f, "({} - {})", x.smallest, x.largest),
-            Self::IpAddr(x) => write!(f, "{}", x),
-            Self::DateTime(x) => write!(f, "{}", x),
-        }
-    }
-}
-
-/// Statistical summary of data of the same type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ColumnStatistics {
-    description: Description,
-    n_largest_count: NLargestCount,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct Description {
-    count: usize,
-    mean: Option<f64>,
-    s_deviation: Option<f64>,
-    min: Option<Element>,
-    max: Option<Element>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ElementCount {
-    value: Element,
-    count: usize,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct NLargestCount {
-    number_of_elements: usize,
-    top_n: Option<Vec<ElementCount>>,
-    mode: Option<Element>,
-}
-
-impl fmt::Display for Description {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Start of Description")?;
-        writeln!(f, "   count: {}", self.count)?;
-        if self.mean.is_some() {
-            writeln!(f, "   mean: {}", self.get_mean().unwrap())?;
-        }
-        if self.s_deviation.is_some() {
-            writeln!(f, "   s-deviation: {}", self.get_s_deviation().unwrap())?;
-        }
-        if self.min.is_some() {
-            writeln!(f, "   min: {}", self.get_min().unwrap())?;
-        }
-        if self.max.is_some() {
-            writeln!(f, "   max: {}", self.get_max().unwrap())?;
-        }
-        writeln!(f, "End of Description")
-    }
-}
-
-impl fmt::Display for NLargestCount {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Start of NLargestCount")?;
-        writeln!(
-            f,
-            "   number of elements: {}",
-            self.get_number_of_elements()
-        )?;
-        writeln!(f, "   Top N")?;
-        for elem in self.get_top_n().unwrap() {
-            writeln!(f, "      data: {}      count: {}", elem.value, elem.count)?;
-        }
-        if self.mode.is_some() {
-            writeln!(f, "   mode: {}", self.get_mode().unwrap())?;
-        }
-        writeln!(f, "End of NLargestCount")
-    }
-}
-
-impl fmt::Display for ColumnType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let display = match self {
-            Self::Int64 => "Int64",
-            Self::Float64 => "Float64",
-            Self::Enum => "Enum",
-            Self::Utf8 => "Utf8",
-            Self::Binary => "Binary",
-            Self::IpAddr => "IpAddr",
-            Self::DateTime => "DateTime",
-        };
-        writeln!(f, "ColumnType::{}", display)
-    }
-}
-
-impl Description {
-    #[must_use]
-    pub fn get_count(&self) -> usize {
-        self.count
-    }
-
-    #[must_use]
-    pub fn get_mean(&self) -> Option<f64> {
-        self.mean
-    }
-
-    #[must_use]
-    pub fn get_s_deviation(&self) -> Option<f64> {
-        self.s_deviation
-    }
-
-    #[must_use]
-    pub fn get_min(&self) -> Option<&Element> {
-        self.min.as_ref()
-    }
-
-    #[must_use]
-    pub fn get_max(&self) -> Option<&Element> {
-        self.max.as_ref()
-    }
-}
-
-impl NLargestCount {
-    #[must_use]
-    pub fn get_number_of_elements(&self) -> usize {
-        self.number_of_elements
-    }
-
-    #[must_use]
-    pub fn get_top_n(&self) -> Option<&Vec<ElementCount>> {
-        self.top_n.as_ref()
-    }
-
-    #[must_use]
-    pub fn get_mode(&self) -> Option<&Element> {
-        self.mode.as_ref()
-    }
-}
-
-fn count_sort<I>(iter: I) -> Vec<(I::Item, usize)>
-where
-    I: Iterator,
-    I::Item: Clone + Eq + Hash,
-{
-    let mut count: HashMap<I::Item, usize> = HashMap::new();
-    for v in iter {
-        let c = count.entry(v).or_insert(0);
-        *c += 1;
-    }
-    let mut top_n: Vec<(I::Item, usize)> = Vec::new();
-    for (k, v) in &count {
-        top_n.push(((*k).clone(), *v));
-    }
-    top_n.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-    top_n
-}
-
-fn describe_top_n_f64<I>(
-    iter: I,
-    min: f64,
-    max: f64,
-    number_of_top_n: u32,
-) -> (usize, Vec<ElementCount>)
-where
-    I: Iterator,
-    I::Item: Deref<Target = f64>,
-{
-    let interval: f64 = (max - min) / NUM_OF_FLOAT_INTERVALS.to_f64().expect("<= 100");
-    let mut count: Vec<(usize, usize)> = vec![(0, 0); NUM_OF_FLOAT_INTERVALS];
-
-    for (i, item) in count.iter_mut().enumerate().take(NUM_OF_FLOAT_INTERVALS) {
-        item.0 = i;
-    }
-
-    for v in iter {
-        let mut slot = ((*v - min) / interval).floor().to_usize().expect("< 100");
-        if slot == NUM_OF_FLOAT_INTERVALS {
-            slot = NUM_OF_FLOAT_INTERVALS - 1;
-        }
-        count[slot].1 += 1;
-    }
-
-    count.retain(|&c| c.1 > 0);
-
-    count.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-
-    let mut top_n: Vec<ElementCount> = Vec::new();
-
-    let number_of_top_n = number_of_top_n.to_usize().expect("safe: u32 -> usize");
-    let num_top_n = if number_of_top_n > count.len() {
-        count.len()
-    } else {
-        number_of_top_n
-    };
-
-    for item in count.iter().take(num_top_n) {
-        if item.1 == 0 {
-            break;
-        }
-        top_n.push(ElementCount {
-            value: Element::FloatRange(FloatRange {
-                smallest: min + (item.0).to_f64().expect("< 30") * interval,
-                largest: min + (item.0 + 1).to_f64().expect("<= 30") * interval,
-            }),
-            count: item.1,
-        });
-    }
-    (count.len(), top_n)
-}
-
-struct MinMax<T> {
-    min: T,
-    max: T,
-}
-
-/// Returns the minimum and maximum values.
-fn find_min_max<I, T>(mut iter: I) -> Option<MinMax<<I::Item as Deref>::Target>>
-where
-    I: Iterator,
-    I::Item: Deref<Target = T>,
-    T: PartialOrd + Clone,
-{
-    let mut min = if let Some(first) = iter.next() {
-        (*first).clone()
-    } else {
-        return None;
-    };
-    let mut max = min.clone();
-
-    for v in iter {
-        if min > *v {
-            min = (*v).clone();
-        } else if max < *v {
-            max = (*v).clone();
-        }
-    }
-    Some(MinMax { min, max })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Column;
     use chrono::NaiveDate;
     use std::convert::TryFrom;
-    use std::net::Ipv4Addr;
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn table_try_default() {
