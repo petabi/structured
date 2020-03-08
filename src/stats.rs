@@ -125,6 +125,23 @@ impl fmt::Display for NLargestCount {
 
 impl Description {
     #[must_use]
+    pub fn new(
+        count: usize,
+        mean: Option<f64>,
+        s_deviation: Option<f64>,
+        min: Option<Element>,
+        max: Option<Element>,
+    ) -> Self {
+        Self {
+            count,
+            mean,
+            s_deviation,
+            min,
+            max,
+        }
+    }
+
+    #[must_use]
     pub fn get_count(&self) -> usize {
         self.count
     }
@@ -151,6 +168,19 @@ impl Description {
 }
 
 impl NLargestCount {
+    #[must_use]
+    pub fn new(
+        number_of_elements: usize,
+        top_n: Option<Vec<ElementCount>>,
+        mode: Option<Element>,
+    ) -> Self {
+        Self {
+            number_of_elements,
+            top_n,
+            mode,
+        }
+    }
+
     #[must_use]
     pub fn get_number_of_elements(&self) -> usize {
         self.number_of_elements

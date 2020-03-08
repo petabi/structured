@@ -716,8 +716,8 @@ mod tests {
             ColumnType::Binary,
         ]);
         let rows = vec![0_usize, 3, 1, 4, 2, 6, 5];
-        let time_intervals = Arc::new(Vec::new());
-        let numbers_of_top_n = Arc::new(Vec::new());
+        let time_intervals = Arc::new(vec![3600]);
+        let numbers_of_top_n = Arc::new(vec![10; 7]);
         let stat = table.get_statistics(
             &rows,
             &column_types,
