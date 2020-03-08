@@ -133,20 +133,21 @@ impl Table {
     }
 
     #[must_use]
-    pub fn describe(
+    pub fn get_statistics(
         &self,
         rows: &[usize],
         column_types: &Arc<Vec<ColumnType>>,
         r_enum_maps: &ReverseEnumMaps,
         time_intervals: &Arc<Vec<u32>>,
         numbers_of_top_n: &Arc<Vec<u32>>,
-    ) -> Vec<Description> {
+    ) -> Vec<ColumnStatistics> {
         self.columns
             .iter()
             .enumerate()
             .map(|(index, column)| {
-                if let ColumnType::Enum = column_types[index] {
-                    column.describe_enum(
+                let description = column.describe(rows, column_types[index]);
+                let n_largest_count = if let ColumnType::Enum = column_types[index] {
+                    column.get_n_largest_count_enum(
                         rows,
                         r_enum_maps.get(&index).unwrap_or(&Arc::new(HashMap::new())),
                         *numbers_of_top_n.get(index).unwrap_or(&DEFAULT_NUM_OF_TOP_N),
@@ -158,19 +159,37 @@ impl Table {
                             cn += 1;
                         }
                     }
-                    column.describe_datetime(
+                    column.get_n_larget_count_datetime(
                         rows,
                         *time_intervals.get(cn).unwrap_or(&DEFAULT_TIME_INTERVAL),
                         *numbers_of_top_n
                             .get(index)
                             .unwrap_or(&DEFAULT_NUM_OF_TOP_N_OF_DATETIME),
                     )
+                } else if let ColumnType::Float64 = column_types[index] {
+                    if let (Some(Element::Float(min)), Some(Element::Float(max))) =
+                        (description.get_min(), description.get_max())
+                    {
+                        column.get_n_largest_count_float64(
+                            rows,
+                            *numbers_of_top_n.get(index).unwrap_or(&DEFAULT_NUM_OF_TOP_N),
+                            *min,
+                            *max,
+                        )
+                    } else {
+                        NLargestCount::default()
+                    }
                 } else {
-                    column.describe(
+                    column.get_n_largest_count(
                         rows,
                         column_types[index],
                         *numbers_of_top_n.get(index).unwrap_or(&DEFAULT_NUM_OF_TOP_N),
                     )
+                };
+
+                ColumnStatistics {
+                    description,
+                    n_largest_count,
                 }
             })
             .collect()
@@ -284,9 +303,8 @@ macro_rules! describe_mean_deviation {
 macro_rules! describe_top_n {
     ( $iter:expr, $len:expr, $d:expr, $t1:ty, $t2:expr, $num_of_top_n:expr ) => {
         let top_n_native: Vec<(&$t1, usize)> = count_sort($iter);
-        $d.count = $len;
-        $d.unique_count = top_n_native.len();
-        let mut top_n: Vec<TopNElement> = Vec::new();
+        $d.number_of_elements = top_n_native.len();
+        let mut top_n: Vec<ElementCount> = Vec::new();
         let num_of_top_n = $num_of_top_n.to_usize().expect("safe: u32 -> usize");
         let top_n_num = if num_of_top_n > top_n_native.len() {
             top_n_native.len()
@@ -294,7 +312,7 @@ macro_rules! describe_top_n {
             num_of_top_n
         };
         for (x, y) in &top_n_native[0..top_n_num] {
-            top_n.push(TopNElement {
+            top_n.push(ElementCount {
                 value: $t2((*x).to_owned()),
                 count: *y,
             });
@@ -416,13 +434,13 @@ impl Column {
 
     #[must_use]
     #[allow(clippy::too_many_lines)]
-    pub fn describe_enum(
+    pub fn get_n_largest_count_enum(
         &self,
         rows: &[usize],
         reverse_map: &Arc<HashMap<u32, Vec<String>>>,
         number_of_top_n: u32,
-    ) -> Description {
-        let desc = self.describe(rows, ColumnType::Enum, number_of_top_n);
+    ) -> NLargestCount {
+        let desc = self.get_n_largest_count(rows, ColumnType::Enum, number_of_top_n);
 
         let (top_n, mode) = {
             if reverse_map.is_empty() {
@@ -432,14 +450,14 @@ impl Column {
                             top_n
                                 .iter()
                                 .map(|elem| {
-                                    if let DescriptionElement::UInt(value) = elem.value {
-                                        TopNElement {
-                                            value: DescriptionElement::Enum(value.to_string()),
+                                    if let Element::UInt(value) = elem.value {
+                                        ElementCount {
+                                            value: Element::Enum(value.to_string()),
                                             count: elem.count,
                                         }
                                     } else {
-                                        TopNElement {
-                                            value: DescriptionElement::Enum("_N/A_".to_string()),
+                                        ElementCount {
+                                            value: Element::Enum("_N/A_".to_string()),
                                             count: elem.count,
                                         }
                                     }
@@ -450,8 +468,8 @@ impl Column {
                     },
                     match desc.get_mode() {
                         Some(mode) => {
-                            if let DescriptionElement::UInt(value) = mode {
-                                Some(DescriptionElement::Enum(value.to_string()))
+                            if let Element::UInt(value) = mode {
+                                Some(Element::Enum(value.to_string()))
                             } else {
                                 None
                             }
@@ -466,28 +484,26 @@ impl Column {
                             top_n
                                 .iter()
                                 .map(|elem| {
-                                    if let DescriptionElement::UInt(value) = elem.value {
-                                        (TopNElement {
-                                            value: DescriptionElement::Enum(
-                                                reverse_map.get(&value).map_or(
-                                                    "_NO_MAP_".to_string(),
-                                                    |v| {
-                                                        let mut s = String::new();
-                                                        for (i, e) in v.iter().enumerate() {
-                                                            s.push_str(e);
-                                                            if i < v.len() - 1 {
-                                                                s.push_str("|")
-                                                            }
+                                    if let Element::UInt(value) = elem.value {
+                                        (ElementCount {
+                                            value: Element::Enum(reverse_map.get(&value).map_or(
+                                                "_NO_MAP_".to_string(),
+                                                |v| {
+                                                    let mut s = String::new();
+                                                    for (i, e) in v.iter().enumerate() {
+                                                        s.push_str(e);
+                                                        if i < v.len() - 1 {
+                                                            s.push_str("|")
                                                         }
-                                                        s
-                                                    },
-                                                ),
-                                            ),
+                                                    }
+                                                    s
+                                                },
+                                            )),
                                             count: elem.count,
                                         })
                                     } else {
-                                        TopNElement {
-                                            value: DescriptionElement::Enum("_N/A_".to_string()),
+                                        ElementCount {
+                                            value: Element::Enum("_N/A_".to_string()),
                                             count: elem.count,
                                         }
                                     }
@@ -498,8 +514,8 @@ impl Column {
                     },
                     match desc.get_mode() {
                         Some(mode) => {
-                            if let DescriptionElement::UInt(value) = mode {
-                                Some(DescriptionElement::Enum(reverse_map.get(value).map_or(
+                            if let Element::UInt(value) = mode {
+                                Some(Element::Enum(reverse_map.get(value).map_or(
                                     "_NO_MAP_".to_string(),
                                     |v| {
                                         let mut s = String::new();
@@ -522,40 +538,22 @@ impl Column {
             }
         };
 
-        Description {
-            count: desc.get_count(),
-            unique_count: desc.get_unique_count(),
-            mean: None,
-            s_deviation: None,
-            min: None,
-            max: None,
+        NLargestCount {
+            number_of_elements: desc.get_number_of_elements(),
             top_n,
             mode,
         }
     }
 
     #[must_use]
-    pub fn describe(
-        &self,
-        rows: &[usize],
-        column_type: ColumnType,
-        number_of_top_n: u32,
-    ) -> Description {
+    pub fn describe(&self, rows: &[usize], column_type: ColumnType) -> Description {
         let mut desc = Description::default();
 
+        desc.count = rows.len();
         match column_type {
             ColumnType::Int64 => {
                 let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
-                describe_min_max!(iter, desc, DescriptionElement::Int);
-                let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
-                describe_top_n!(
-                    iter,
-                    rows.len(),
-                    desc,
-                    i64,
-                    DescriptionElement::Int,
-                    number_of_top_n
-                );
+                describe_min_max!(iter, desc, Element::Int);
                 let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
                 #[allow(clippy::cast_precision_loss)] // 52-bit precision is good enough
                 let f_values: Vec<f64> = iter.map(|v: &i64| *v as f64).collect();
@@ -563,49 +561,38 @@ impl Column {
             }
             ColumnType::Float64 => {
                 let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
-                describe_min_max!(iter, desc, DescriptionElement::Float);
-                let min = if let Some(DescriptionElement::Float(f)) = desc.get_min() {
-                    f
-                } else {
-                    unreachable!() // by implementation
-                };
-                let max = if let Some(DescriptionElement::Float(f)) = desc.get_max() {
-                    f
-                } else {
-                    unreachable!() // by implementation
-                };
-                let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
-                let (rc, rt) = describe_top_n_f64(iter, *min, *max, number_of_top_n);
-                desc.count = rows.len();
-                desc.unique_count = rc;
-                desc.mode = Some(rt[0].value.clone());
-                desc.top_n = Some(rt);
-
+                describe_min_max!(iter, desc, Element::Float);
                 let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
                 let values = iter.cloned().collect::<Vec<_>>();
                 describe_mean_deviation!(values, f64, desc);
             }
+            _ => (),
+        }
+
+        desc
+    }
+
+    #[must_use]
+    pub fn get_n_largest_count(
+        &self,
+        rows: &[usize],
+        column_type: ColumnType,
+        number_of_top_n: u32,
+    ) -> NLargestCount {
+        let mut desc = NLargestCount::default();
+
+        match column_type {
+            ColumnType::Int64 => {
+                let iter = self.view_iter::<Int64ArrayType, i64>(rows).unwrap();
+                describe_top_n!(iter, rows.len(), desc, i64, Element::Int, number_of_top_n);
+            }
             ColumnType::Enum => {
                 let iter = self.view_iter::<UInt32ArrayType, u32>(rows).unwrap();
-                describe_top_n!(
-                    iter,
-                    rows.len(),
-                    desc,
-                    u32,
-                    DescriptionElement::UInt,
-                    number_of_top_n
-                );
+                describe_top_n!(iter, rows.len(), desc, u32, Element::UInt, number_of_top_n);
             }
             ColumnType::Utf8 => {
                 let iter = self.view_iter::<Utf8ArrayType, str>(rows).unwrap();
-                describe_top_n!(
-                    iter,
-                    rows.len(),
-                    desc,
-                    str,
-                    DescriptionElement::Text,
-                    number_of_top_n
-                );
+                describe_top_n!(iter, rows.len(), desc, str, Element::Text, number_of_top_n);
             }
             ColumnType::Binary => {
                 let iter = self.view_iter::<BinaryArrayType, [u8]>(rows).unwrap();
@@ -614,7 +601,7 @@ impl Column {
                     rows.len(),
                     desc,
                     [u8],
-                    DescriptionElement::Binary,
+                    Element::Binary,
                     number_of_top_n
                 );
             }
@@ -629,24 +616,43 @@ impl Column {
                     rows.len(),
                     desc,
                     IpAddr,
-                    DescriptionElement::IpAddr,
+                    Element::IpAddr,
                     number_of_top_n
                 );
             }
-            ColumnType::DateTime => unreachable!(), // by implementation
+            ColumnType::DateTime | ColumnType::Float64 => unreachable!(), // by implementation
         }
 
         desc
     }
 
     #[must_use]
-    fn describe_datetime(
+    fn get_n_largest_count_float64(
+        &self,
+        rows: &[usize],
+        number_of_top_n: u32,
+        min: f64,
+        max: f64,
+    ) -> NLargestCount {
+        let mut desc = NLargestCount::default();
+
+        let iter = self.view_iter::<Float64ArrayType, f64>(rows).unwrap();
+        let (rc, rt) = describe_top_n_f64(iter, min, max, number_of_top_n);
+        desc.number_of_elements = rc;
+        desc.mode = Some(rt[0].value.clone());
+        desc.top_n = Some(rt);
+
+        desc
+    }
+
+    #[must_use]
+    fn get_n_larget_count_datetime(
         &self,
         rows: &[usize],
         time_interval: u32,
         number_of_top_n: u32,
-    ) -> Description {
-        let mut desc = Description::default();
+    ) -> NLargestCount {
+        let mut desc = NLargestCount::default();
 
         let time_interval = if time_interval > MAX_TIME_INTERVAL {
             MAX_TIME_INTERVAL
@@ -678,10 +684,10 @@ impl Column {
             rows.len(),
             desc,
             NaiveDateTime,
-            DescriptionElement::DateTime,
+            Element::DateTime,
             number_of_top_n
         );
-
+        // TODO: rename desc
         desc
     }
 }
@@ -869,7 +875,7 @@ where
 
 /// The underlying data type of a column description.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum DescriptionElement {
+pub enum Element {
     Int(i64),
     UInt(u32),
     Enum(String), // describe() converts UInt -> Enum using enum maps. Without maps, by to_string().
@@ -887,7 +893,7 @@ pub struct FloatRange {
     largest: f64,
 }
 
-impl fmt::Display for DescriptionElement {
+impl fmt::Display for Element {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int(x) => write!(f, "{}", x),
@@ -903,29 +909,38 @@ impl fmt::Display for DescriptionElement {
 }
 
 /// Statistical summary of data of the same type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnStatistics {
+    description: Description,
+    n_largest_count: NLargestCount,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Description {
     count: usize,
-    unique_count: usize,
     mean: Option<f64>,
     s_deviation: Option<f64>,
-    min: Option<DescriptionElement>,
-    max: Option<DescriptionElement>,
-    top_n: Option<Vec<TopNElement>>,
-    mode: Option<DescriptionElement>,
+    min: Option<Element>,
+    max: Option<Element>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TopNElement {
-    value: DescriptionElement,
+pub struct ElementCount {
+    value: Element,
     count: usize,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct NLargestCount {
+    number_of_elements: usize,
+    top_n: Option<Vec<ElementCount>>,
+    mode: Option<Element>,
 }
 
 impl fmt::Display for Description {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Start of Description")?;
         writeln!(f, "   count: {}", self.count)?;
-        writeln!(f, "   unique count: {}", self.unique_count)?;
         if self.mean.is_some() {
             writeln!(f, "   mean: {}", self.get_mean().unwrap())?;
         }
@@ -938,6 +953,18 @@ impl fmt::Display for Description {
         if self.max.is_some() {
             writeln!(f, "   max: {}", self.get_max().unwrap())?;
         }
+        writeln!(f, "End of Description")
+    }
+}
+
+impl fmt::Display for NLargestCount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Start of NLargestCount")?;
+        writeln!(
+            f,
+            "   number of elements: {}",
+            self.get_number_of_elements()
+        )?;
         writeln!(f, "   Top N")?;
         for elem in self.get_top_n().unwrap() {
             writeln!(f, "      data: {}      count: {}", elem.value, elem.count)?;
@@ -945,7 +972,7 @@ impl fmt::Display for Description {
         if self.mode.is_some() {
             writeln!(f, "   mode: {}", self.get_mode().unwrap())?;
         }
-        writeln!(f, "End of Description")
+        writeln!(f, "End of NLargestCount")
     }
 }
 
@@ -971,11 +998,6 @@ impl Description {
     }
 
     #[must_use]
-    pub fn get_unique_count(&self) -> usize {
-        self.unique_count
-    }
-
-    #[must_use]
     pub fn get_mean(&self) -> Option<f64> {
         self.mean
     }
@@ -986,22 +1008,29 @@ impl Description {
     }
 
     #[must_use]
-    pub fn get_min(&self) -> Option<&DescriptionElement> {
+    pub fn get_min(&self) -> Option<&Element> {
         self.min.as_ref()
     }
 
     #[must_use]
-    pub fn get_max(&self) -> Option<&DescriptionElement> {
+    pub fn get_max(&self) -> Option<&Element> {
         self.max.as_ref()
+    }
+}
+
+impl NLargestCount {
+    #[must_use]
+    pub fn get_number_of_elements(&self) -> usize {
+        self.number_of_elements
     }
 
     #[must_use]
-    pub fn get_top_n(&self) -> Option<&Vec<TopNElement>> {
+    pub fn get_top_n(&self) -> Option<&Vec<ElementCount>> {
         self.top_n.as_ref()
     }
 
     #[must_use]
-    pub fn get_mode(&self) -> Option<&DescriptionElement> {
+    pub fn get_mode(&self) -> Option<&Element> {
         self.mode.as_ref()
     }
 }
@@ -1029,7 +1058,7 @@ fn describe_top_n_f64<I>(
     min: f64,
     max: f64,
     number_of_top_n: u32,
-) -> (usize, Vec<TopNElement>)
+) -> (usize, Vec<ElementCount>)
 where
     I: Iterator,
     I::Item: Deref<Target = f64>,
@@ -1053,7 +1082,7 @@ where
 
     count.sort_unstable_by(|a, b| b.1.cmp(&a.1));
 
-    let mut top_n: Vec<TopNElement> = Vec::new();
+    let mut top_n: Vec<ElementCount> = Vec::new();
 
     let number_of_top_n = number_of_top_n.to_usize().expect("safe: u32 -> usize");
     let num_top_n = if number_of_top_n > count.len() {
@@ -1066,8 +1095,8 @@ where
         if item.1 == 0 {
             break;
         }
-        top_n.push(TopNElement {
-            value: DescriptionElement::FloatRange(FloatRange {
+        top_n.push(ElementCount {
+            value: Element::FloatRange(FloatRange {
                 smallest: min + (item.0).to_f64().expect("< 30") * interval,
                 largest: min + (item.0 + 1).to_f64().expect("<= 30") * interval,
             }),
@@ -1247,7 +1276,7 @@ mod tests {
         let rows = vec![0_usize, 3, 1, 4, 2, 6, 5];
         let time_intervals = Arc::new(Vec::new());
         let numbers_of_top_n = Arc::new(Vec::new());
-        let ds = table.describe(
+        let stat = table.get_statistics(
             &rows,
             &column_types,
             &reverse_enum_maps(&HashMap::new()),
@@ -1255,24 +1284,24 @@ mod tests {
             &numbers_of_top_n,
         );
 
-        assert_eq!(4, ds[0].unique_count);
+        assert_eq!(4, stat[0].n_largest_count.number_of_elements);
         assert_eq!(
-            DescriptionElement::Text("111a qwer".to_string()),
-            *ds[1].get_mode().unwrap()
+            Element::Text("111a qwer".to_string()),
+            *stat[1].n_largest_count.get_mode().unwrap()
         );
         assert_eq!(
-            DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
-            ds[2].get_top_n().unwrap()[1].value
+            Element::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
+            stat[2].n_largest_count.get_top_n().unwrap()[1].value
         );
-        assert_eq!(3, ds[3].unique_count);
+        assert_eq!(3, stat[3].n_largest_count.number_of_elements);
         assert_eq!(
-            DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
-            ds[4].get_top_n().unwrap()[0].value
+            Element::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
+            stat[4].n_largest_count.get_top_n().unwrap()[0].value
         );
-        assert_eq!(3, ds[5].unique_count);
+        assert_eq!(3, stat[5].n_largest_count.number_of_elements);
         assert_eq!(
-            DescriptionElement::Binary(b"111a qwer".to_vec()),
-            *ds[6].get_mode().unwrap()
+            Element::Binary(b"111a qwer".to_vec()),
+            *stat[6].n_largest_count.get_mode().unwrap()
         );
 
         let mut c5_map: HashMap<u32, String> = HashMap::new();
@@ -1281,7 +1310,7 @@ mod tests {
         c5_map.insert(7, "t3".to_string());
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
-        let ds = table.describe(
+        let stat = table.get_statistics(
             &rows,
             &column_types,
             &reverse_enum_maps(&labels),
@@ -1289,27 +1318,27 @@ mod tests {
             &numbers_of_top_n,
         );
 
-        assert_eq!(4, ds[0].unique_count);
+        assert_eq!(4, stat[0].n_largest_count.number_of_elements);
         assert_eq!(
-            DescriptionElement::Text("111a qwer".to_string()),
-            *ds[1].get_mode().unwrap()
+            Element::Text("111a qwer".to_string()),
+            *stat[1].n_largest_count.get_mode().unwrap()
         );
         assert_eq!(
-            DescriptionElement::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
-            ds[2].get_top_n().unwrap()[1].value
+            Element::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
+            stat[2].n_largest_count.get_top_n().unwrap()[1].value
         );
-        assert_eq!(3, ds[3].unique_count);
+        assert_eq!(3, stat[3].n_largest_count.number_of_elements);
         assert_eq!(
-            DescriptionElement::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
-            ds[4].get_top_n().unwrap()[0].value
-        );
-        assert_eq!(
-            DescriptionElement::Enum("t2".to_string()),
-            *ds[5].get_mode().unwrap()
+            Element::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
+            stat[4].n_largest_count.get_top_n().unwrap()[0].value
         );
         assert_eq!(
-            DescriptionElement::Binary(b"111a qwer".to_vec()),
-            *ds[6].get_mode().unwrap()
+            Element::Enum("t2".to_string()),
+            *stat[5].n_largest_count.get_mode().unwrap()
+        );
+        assert_eq!(
+            Element::Binary(b"111a qwer".to_vec()),
+            *stat[6].n_largest_count.get_mode().unwrap()
         );
     }
 }
