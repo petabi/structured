@@ -12,6 +12,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Take time intervals and numbers of top N as arguments of the `describe`
   function.
 - Mitigate lock contention in parsing dictionary-encoded fields.
+- `Description` is decomposed into `Description` and `NLargestCount`.
+- Convert tuple into struct because openapi doesn't support tuple.
 
 ## [0.1.1] - 2020-02-25
 
