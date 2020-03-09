@@ -12,8 +12,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Take time intervals and numbers of top N as arguments of the `describe`
   function.
 - Mitigate lock contention in parsing dictionary-encoded fields.
+- Change tuple with struct because the openapi doesn't support tuple.
 - `Description` is decomposed into `Description` and `NLargestCount`.
-- Convert tuple into struct because openapi doesn't support tuple.
+- Change `table::describe` with `table::statistics` which returns
+  a vector of `ColumnStatistics` having `Description` and `NLargestCount`.
+- Take time intervals and numbers of top N as arguments of the `statistics`
+  function.
 
 ## [0.1.1] - 2020-02-25
 
