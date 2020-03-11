@@ -8,7 +8,10 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::str::{self, FromStr};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 
 struct Record {
     fields: Vec<u8>,
@@ -270,7 +273,7 @@ where
     batch_size: usize,
     parsers: &'a [FieldParser],
     labels: &'a ConcurrentEnumMaps,
-    enum_max_values: Arc<HashMap<usize, Arc<Mutex<u32>>, H>>,
+    enum_max_values: Arc<HashMap<usize, AtomicU32, H>>,
 }
 
 impl<'a, I, H> Reader<'a, I, H>
@@ -284,7 +287,7 @@ where
         batch_size: usize,
         parsers: &'a [FieldParser],
         labels: &'a ConcurrentEnumMaps,
-        enum_max_values: Arc<HashMap<usize, Arc<Mutex<u32>>, H>>,
+        enum_max_values: Arc<HashMap<usize, AtomicU32, H>>,
     ) -> Self {
         Reader {
             record_iter,
@@ -354,17 +357,26 @@ where
                                 self.enum_max_values.get(&i).map_or(
                                     (u32::max_value(), 0_usize),
                                     |v| {
-                                        let mut value_locked = v.lock().expect("safe");
-                                        if *value_locked < u32::max_value() {
-                                            *value_locked += 1;
-                                        }
-                                        (*value_locked, 0_usize)
+                                        let len = {
+                                            let mut len;
+                                            loop {
+                                                // u32::max_value means
+                                                // something wrong, and 0 means
+                                                // unmapped. And, enum value
+                                                // starts with 1.
+                                                len = v.fetch_add(1, Ordering::Relaxed) + 1;
+                                                if 0 < len && len < u32::max_value() {
+                                                    break;
+                                                }
+                                            }
+                                            len
+                                        };
+                                        (len, 0_usize)
                                     },
                                 )
                             });
                             *entry.value_mut() = (entry.value().0, entry.value().1 + 1);
                             entry.value().0
-                            // u32::max_value means something wrong, and 0 means unmapped. And, enum value starts with 1.
                         });
                         builder.try_push(value)?;
                     }
@@ -625,14 +637,12 @@ mod tests {
         ];
         let (data, labels, columns) = get_test_data();
         let c_enum_maps = convert_to_conc_enum_maps(&labels);
-        let enum_max_values: HashMap<usize, Arc<Mutex<u32>>> = c_enum_maps
+        let enum_max_values: HashMap<usize, AtomicU32> = c_enum_maps
             .iter()
             .map(|m| {
                 (
                     *m.key(),
-                    Arc::new(Mutex::new(
-                        m.value().len().to_u32().unwrap_or(u32::max_value()),
-                    )),
+                    AtomicU32::new(m.value().len().to_u32().unwrap_or(u32::max_value())),
                 )
             })
             .collect();
@@ -659,14 +669,12 @@ mod tests {
         let record = "1\n".to_string().into_bytes();
         let row = vec![record.as_slice()];
         let c_enum_maps = convert_to_conc_enum_maps(&labels);
-        let enum_max_values: HashMap<usize, Arc<Mutex<u32>>> = c_enum_maps
+        let enum_max_values: HashMap<usize, AtomicU32> = c_enum_maps
             .iter()
             .map(|m| {
                 (
                     *m.key(),
-                    Arc::new(Mutex::new(
-                        m.value().len().to_u32().unwrap_or(u32::max_value()),
-                    )),
+                    AtomicU32::new(m.value().len().to_u32().unwrap_or(u32::max_value())),
                 )
             })
             .collect();
