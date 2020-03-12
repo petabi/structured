@@ -394,7 +394,7 @@ pub(crate) fn n_largest_count_enum(
                             .iter()
                             .map(|elem| {
                                 if let Element::UInt(value) = elem.value {
-                                    (ElementCount {
+                                    ElementCount {
                                         value: Element::Enum(reverse_map.get(&value).map_or(
                                             "_NO_MAP_".to_string(),
                                             |v| {
@@ -409,7 +409,7 @@ pub(crate) fn n_largest_count_enum(
                                             },
                                         )),
                                         count: elem.count,
-                                    })
+                                    }
                                 } else {
                                     ElementCount {
                                         value: Element::Enum("_N/A_".to_string()),
