@@ -550,7 +550,11 @@ where
     }
 
     for v in iter {
-        let mut slot = ((*v - min) / interval).floor().to_usize().expect("< 100");
+        let mut slot = if interval == 0.0_f64 {
+            0_usize
+        } else {
+            ((*v - min) / interval).floor().to_usize().expect("< 100")
+        };
         if slot == NUM_OF_FLOAT_INTERVALS {
             slot = NUM_OF_FLOAT_INTERVALS - 1;
         }
