@@ -1,5 +1,7 @@
 use crate::array::{variable, Array, BinaryBuilder, Builder, PrimitiveBuilder, StringBuilder};
-use crate::datatypes::*;
+use crate::datatypes::{
+    DataType, Field, Float64Type, Int64Type, PrimitiveType, Schema, UInt32Type,
+};
 use crate::memory::AllocationError;
 use crate::record;
 use csv_core::ReadRecordResult;
