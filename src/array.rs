@@ -6,7 +6,7 @@ pub use primitive::Builder as PrimitiveBuilder;
 pub use variable::{BinaryArray, BinaryArrayIter, BinaryBuilder};
 pub use variable::{StringArray, StringArrayIter, StringBuilder};
 
-use crate::datatypes::*;
+use crate::datatypes::DataType;
 use crate::memory::Buffer;
 use std::any::Any;
 use std::fmt;

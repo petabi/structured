@@ -1,5 +1,7 @@
-use crate::array::*;
-use crate::datatypes::*;
+use crate::array::{primitive, Array, BinaryArray, Builder, StringArray};
+use crate::datatypes::{
+    Float64Type, Int32Type, Int64Type, PrimitiveType, TimeUnit, UInt32Type, UInt8Type,
+};
 use crate::memory::AllocationError;
 use crate::{DataType, Schema};
 use dashmap::DashMap;
@@ -564,11 +566,7 @@ where
     type Item = A::Elem;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let selected = if let Some(selected) = self.selected.next() {
-            selected
-        } else {
-            return None;
-        };
+        let selected = self.selected.next()?;
         if let Ok(elem) = self.column.try_get::<A, T>(*selected) {
             elem
         } else {
@@ -580,6 +578,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::datatypes::Field;
     use crate::Column;
     use chrono::NaiveDate;
     use std::convert::TryFrom;

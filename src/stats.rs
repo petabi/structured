@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
-use statistical::*;
+use statistical::{mean, population_standard_deviation};
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
