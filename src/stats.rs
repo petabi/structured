@@ -48,7 +48,13 @@ impl fmt::Display for Element {
             Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
             Self::Binary(x) => write!(f, "{:#?}", x),
             Self::Float(x) => write!(f, "{}", x),
-            Self::FloatRange(x) => write!(f, "({} - {})", x.smallest, x.largest),
+            Self::FloatRange(x) => {
+                if x.smallest == 0.0_f64 && x.largest == 0.0_f64 {
+                    write!(f, "0")
+                } else {
+                    write!(f, "{:.3}~{:.3}", x.smallest, x.largest)
+                }
+            }
             Self::IpAddr(x) => write!(f, "{}", x),
             Self::DateTime(x) => write!(f, "{}", x),
         }
