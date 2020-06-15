@@ -90,6 +90,12 @@ pub struct NLargestCount {
     pub(crate) mode: Option<Element>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeSeries {
+    pub count_index: Option<usize>, // if None, count just rows. If Some, count values of the column.
+    pub series: Vec<ElementCount>,
+}
+
 impl fmt::Display for Description {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Start of Description")?;

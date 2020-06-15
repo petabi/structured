@@ -19,7 +19,7 @@ use strum_macros::EnumString;
 
 use crate::stats::{
     describe, n_largest_count, n_largest_count_datetime, n_largest_count_enum,
-    n_largest_count_float64, ColumnStatistics, Element, NLargestCount,
+    n_largest_count_float64, ColumnStatistics, Element, NLargestCount, TimeSeries,
 };
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
@@ -135,8 +135,19 @@ impl Table {
         r_enum_maps: &ReverseEnumMaps,
         time_intervals: &Arc<Vec<u32>>,
         numbers_of_top_n: &Arc<Vec<u32>>,
+        time_column: Option<usize>,
+        count_column: Option<Vec<usize>>,
     ) -> Vec<ColumnStatistics> {
-        self.columns
+        let time_series: Option<Vec<TimeSeries>>  = time_column.and_then(|time_column| {
+            if let ColumnType::DateTime = column_types[time_column] {
+                let time_series = Vec::new();
+
+                Some(time_series)
+            } else {
+                None
+            }
+        });
+        let column_statistics = self.columns
             .iter()
             .enumerate()
             .map(|(index, column)| {
@@ -199,7 +210,9 @@ impl Table {
                     n_largest_count,
                 }
             })
-            .collect()
+            .collect();
+        
+        column_statistics
     }
 
     #[must_use]
@@ -723,6 +736,8 @@ mod tests {
             &reverse_enum_maps(&HashMap::new()),
             &time_intervals,
             &numbers_of_top_n,
+            None,
+            None,
         );
 
         assert_eq!(4, stat[0].n_largest_count.number_of_elements);
@@ -757,6 +772,8 @@ mod tests {
             &reverse_enum_maps(&labels),
             &time_intervals,
             &numbers_of_top_n,
+            None,
+            None,
         );
 
         assert_eq!(4, stat[0].n_largest_count.number_of_elements);
