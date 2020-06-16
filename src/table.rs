@@ -4,6 +4,7 @@ use crate::datatypes::{
 };
 use crate::memory::AllocationError;
 use crate::{DataType, Schema};
+use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -18,8 +19,9 @@ use std::vec;
 use strum_macros::EnumString;
 
 use crate::stats::{
-    describe, n_largest_count, n_largest_count_datetime, n_largest_count_enum,
-    n_largest_count_float64, ColumnStatistics, Element, NLargestCount, TimeSeries,
+    convert_time_intervals, describe, n_largest_count, n_largest_count_datetime,
+    n_largest_count_enum, n_largest_count_float64, ColumnStatistics, Element, NLargestCount,
+    Statistics, TimeCount, TimeSeries,
 };
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
@@ -127,6 +129,8 @@ impl Table {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn statistics(
         &self,
@@ -136,18 +140,78 @@ impl Table {
         time_intervals: &Arc<Vec<u32>>,
         numbers_of_top_n: &Arc<Vec<u32>>,
         time_column: Option<usize>,
-        count_column: Option<Vec<usize>>,
-    ) -> Vec<ColumnStatistics> {
-        let time_series: Option<Vec<TimeSeries>>  = time_column.and_then(|time_column| {
+        count_columns: &Arc<Vec<usize>>,
+    ) -> Statistics {
+        let time_series: Vec<TimeSeries> = time_column.map_or_else(Vec::new, |time_column| {
             if let ColumnType::DateTime = column_types[time_column] {
-                let time_series = Vec::new();
+                let mut cn: usize = 0;
+                for i in 0..time_column {
+                    if let ColumnType::DateTime = column_types[i] {
+                        cn += 1;
+                    }
+                }
+                let times = convert_time_intervals(
+                    self.columns
+                        .get(time_column)
+                        .expect("time column should exist"),
+                    rows,
+                    *time_intervals
+                        .get(cn)
+                        .expect("time intervals should exist."),
+                );
+                let time_series: Vec<TimeSeries> = count_columns
+                    .iter()
+                    .filter_map(|&count_index| {
+                        let column = self
+                            .columns
+                            .get(count_index)
+                            .expect("count column should exist");
+                        let mut time_count: HashMap<NaiveDateTime, usize> = HashMap::new();
+                        if time_column == count_index {
+                            for &time in &times {
+                                *time_count.entry(time).or_insert(0) += 1;
+                            }
+                        } else if let ColumnType::Int64 = column_types[count_index] {
+                            let counts = column
+                                .view_iter::<Int64ArrayType, i64>(rows)
+                                .unwrap()
+                                .map(|v: &i64| v.to_usize().unwrap_or(0)) // if count is negative, then 0
+                                .collect::<Vec<_>>();
 
-                Some(time_series)
+                            for (index, &time) in times.iter().enumerate() {
+                                *time_count.entry(time).or_insert(0) += counts[index];
+                            }
+                        }
+
+                        if time_count.is_empty() {
+                            None
+                        } else {
+                            let mut series: Vec<TimeCount> = time_count
+                                .iter()
+                                .map(|(&time, &count)| TimeCount { time, count })
+                                .collect();
+                            series.sort_by(|a, b| a.time.cmp(&b.time));
+
+                            let count_index = if time_column == count_index {
+                                None
+                            } else {
+                                Some(count_index)
+                            };
+                            Some(TimeSeries {
+                                count_index,
+                                series,
+                            })
+                        }
+                    })
+                    .collect();
+
+                time_series
             } else {
-                None
+                Vec::new()
             }
         });
-        let column_statistics = self.columns
+        let column_statistics = self
+            .columns
             .iter()
             .enumerate()
             .map(|(index, column)| {
@@ -162,7 +226,7 @@ impl Table {
                             .expect("top N number for each column should exist."),
                     )
                 } else if let ColumnType::DateTime = column_types[index] {
-                    let mut cn = 0_usize;
+                    let mut cn: usize = 0;
                     for i in 0..index {
                         if let ColumnType::DateTime = column_types[i] {
                             cn += 1;
@@ -211,8 +275,11 @@ impl Table {
                 }
             })
             .collect();
-        
-        column_statistics
+
+        Statistics {
+            column_statistics,
+            time_series,
+        }
     }
 
     #[must_use]
@@ -730,15 +797,17 @@ mod tests {
         let rows = vec![0_usize, 3, 1, 4, 2, 6, 5];
         let time_intervals = Arc::new(vec![3600]);
         let numbers_of_top_n = Arc::new(vec![10; 7]);
-        let stat = table.statistics(
-            &rows,
-            &column_types,
-            &reverse_enum_maps(&HashMap::new()),
-            &time_intervals,
-            &numbers_of_top_n,
-            None,
-            None,
-        );
+        let stat = table
+            .statistics(
+                &rows,
+                &column_types,
+                &reverse_enum_maps(&HashMap::new()),
+                &time_intervals,
+                &numbers_of_top_n,
+                None,
+                &Arc::new(Vec::new()),
+            )
+            .column_statistics;
 
         assert_eq!(4, stat[0].n_largest_count.number_of_elements);
         assert_eq!(
@@ -766,15 +835,17 @@ mod tests {
         c5_map.insert(7, "t3".to_string());
         let mut labels = HashMap::new();
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
-        let stat = table.statistics(
-            &rows,
-            &column_types,
-            &reverse_enum_maps(&labels),
-            &time_intervals,
-            &numbers_of_top_n,
-            None,
-            None,
-        );
+        let stat = table
+            .statistics(
+                &rows,
+                &column_types,
+                &reverse_enum_maps(&labels),
+                &time_intervals,
+                &numbers_of_top_n,
+                None,
+                &Arc::new(Vec::new()),
+            )
+            .column_statistics;
 
         assert_eq!(4, stat[0].n_largest_count.number_of_elements);
         assert_eq!(

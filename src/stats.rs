@@ -61,6 +61,12 @@ impl fmt::Display for Element {
     }
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Statistics {
+    pub column_statistics: Vec<ColumnStatistics>,
+    pub time_series: Vec<TimeSeries>,
+}
+
 /// Statistical summary of data of the same type.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ColumnStatistics {
@@ -83,6 +89,12 @@ pub struct ElementCount {
     pub count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeCount {
+    pub time: NaiveDateTime,
+    pub count: usize,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct NLargestCount {
     pub(crate) number_of_elements: usize,
@@ -93,7 +105,7 @@ pub struct NLargestCount {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeSeries {
     pub count_index: Option<usize>, // if None, count just rows. If Some, count values of the column.
-    pub series: Vec<ElementCount>,
+    pub series: Vec<TimeCount>,
 }
 
 impl fmt::Display for Description {
@@ -493,7 +505,26 @@ pub(crate) fn n_largest_count_datetime(
     number_of_top_n: u32,
 ) -> NLargestCount {
     let mut n_largest_count = NLargestCount::default();
+    let values = convert_time_intervals(column, rows, time_interval);
 
+    top_n!(
+        values.iter(),
+        rows.len(),
+        n_largest_count,
+        NaiveDateTime,
+        Element::DateTime,
+        number_of_top_n
+    );
+
+    n_largest_count
+}
+
+#[must_use]
+pub(crate) fn convert_time_intervals(
+    column: &Column,
+    rows: &[usize],
+    time_interval: u32,
+) -> Vec<NaiveDateTime> {
     let time_interval = if time_interval > MAX_TIME_INTERVAL {
         MAX_TIME_INTERVAL
     // Users want to see time series of the same order intervals within MAX_TIME_INTERVAL which is in date units.
@@ -508,7 +539,7 @@ pub(crate) fn n_largest_count_datetime(
     };
     let time_interval = i64::from(time_interval);
 
-    let values = column
+    column
         .view_iter::<Int64ArrayType, i64>(rows)
         .unwrap()
         .map(|v: &i64| {
@@ -517,18 +548,7 @@ pub(crate) fn n_largest_count_datetime(
             ts += (*v - ts) / time_interval * time_interval;
             NaiveDateTime::from_timestamp(ts, 0)
         })
-        .collect::<Vec<_>>();
-
-    top_n!(
-        values.iter(),
-        rows.len(),
-        n_largest_count,
-        NaiveDateTime,
-        Element::DateTime,
-        number_of_top_n
-    );
-
-    n_largest_count
+        .collect::<Vec<_>>()
 }
 
 fn count_sort<I>(iter: I) -> Vec<(I::Item, usize)>
