@@ -9,12 +9,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- `table::statistics` returns `Statistics` having column statistics and
+- `Table::statistics` returns `Statistics` having column statistics and
   time series.
 
 ### Added
 
-- `table::statistics` gets `time_column` and `count_columns` for generating
+- `Table::statistics` gets `time_column` and `count_columns` for generating
   time series as additional arguments.
 - Time series have values which sum each column of `count_columns`, so
   the number of generated time series is the same number of `count_columns`.
@@ -28,7 +28,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Mitigate lock contention in parsing dictionary-encoded fields.
 - `Description` is decomposed into `Description` and `NLargestCount`.
-- Change `table::describe` with `table::statistics` which returns
+- Change `Table::describe` with `Table::statistics` which returns
   a vector of `ColumnStatistics` having `Description` and `NLargestCount`.
 - Take time intervals and numbers of top N as arguments of the `statistics`
   function.
