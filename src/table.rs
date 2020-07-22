@@ -718,6 +718,73 @@ mod tests {
     }
 
     #[test]
+    fn time_series_test() {
+        let schema = Schema::new(vec![
+            Field::new(DataType::Timestamp(TimeUnit::Second)),
+            Field::new(DataType::Int64),
+            Field::new(DataType::Int64),
+        ]);
+        let c0_v: Vec<i64> = vec![
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 10)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 13)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 15)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 22)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 22)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 31)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 33)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1).and_hms(0, 1, 1).timestamp(),
+        ];
+        let c1_v: Vec<i64> = vec![1, 32, 3, 5, 2, 1, 3, 24];
+        let c2_v: Vec<i64> = vec![2, 33, 4, 6, 3, 2, 4, 25];
+        let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
+        let c1 = Column::try_from_slice::<Int64Type>(&c1_v).unwrap();
+        let c2 = Column::try_from_slice::<Int64Type>(&c2_v).unwrap();
+        let c_v: Vec<Column> = vec![c0, c1, c2];
+        let table = Table::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
+        let column_types = Arc::new(vec![
+            ColumnType::DateTime,
+            ColumnType::Int64,
+            ColumnType::Int64,
+        ]);
+        let rows = vec![0_usize, 3, 1, 4, 2, 6, 5, 7];
+        let time_intervals = Arc::new(vec![30]);
+        let numbers_of_top_n = Arc::new(vec![10; 3]);
+        let time_column = Some(0_usize);
+        let count_columns = vec![0, 1, 2];
+        let time_series = table
+            .statistics(
+                &rows,
+                &column_types,
+                &reverse_enum_maps(&HashMap::new()),
+                &time_intervals,
+                &numbers_of_top_n,
+                time_column,
+                &Arc::new(count_columns),
+            )
+            .time_series;
+        assert_eq!(None, time_series[0].count_index);
+        assert_eq!(Some(1), time_series[1].count_index);
+        assert_eq!(Some(2), time_series[2].count_index);
+        assert_eq!(5_usize, time_series[0].series[0].count);
+        assert_eq!(43_usize, time_series[1].series[0].count);
+        assert_eq!(48_usize, time_series[2].series[0].count);
+    }
+
+    #[test]
     fn description_test() {
         let schema = Schema::new(vec![
             Field::new(DataType::Int64),
