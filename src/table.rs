@@ -169,7 +169,7 @@ impl Table {
                         let mut time_count: HashMap<NaiveDateTime, usize> = HashMap::new();
                         if time_column == count_index {
                             for &time in &times {
-                                *time_count.entry(time).or_insert(0) += 1;
+                                *time_count.entry(time).or_insert(0) += 1; // count just rows
                             }
                         } else if let ColumnType::Int64 = column_types[count_index] {
                             let counts = column
@@ -180,6 +180,7 @@ impl Table {
 
                             for (index, &time) in times.iter().enumerate() {
                                 *time_count.entry(time).or_insert(0) += counts[index];
+                                // count column values
                             }
                         }
 
