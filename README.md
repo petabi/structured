@@ -2,6 +2,8 @@
 
 Data structures to handle large, structured data.
 
+[![crates.io](https://img.shields.io/crates/v/structured)](https://crates.io/crates/structured)
+[![Documentation](https://docs.rs/structured/badge.svg)](https://docs.rs/structured)
 [![Coverage Status](https://codecov.io/gh/petabi/structured/branch/master/graphs/badge.svg)](https://codecov.io/gh/petabi/structured)
 
 ## Minimum Supported Rust Version
