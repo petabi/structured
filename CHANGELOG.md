@@ -7,7 +7,6 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
-
 ### Added
 
 - `Table::count_group_by` gets `by_column`, `by_interval` and `count_columns`
