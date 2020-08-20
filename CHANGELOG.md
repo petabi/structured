@@ -7,18 +7,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
-### Changed
-
-- `Table::statistics` returns `Statistics` having column statistics and
-  time series.
 
 ### Added
 
-- `Table::statistics` gets `time_column` and `count_columns` for generating
-  time series as additional arguments.
-- Time series have values which sum each column of `count_columns`, so
-  the number of generated time series is the same number of `count_columns`.
-- If one of count columns is the same as `time_column`, time series having
+- `Table::count_group_by` gets `by_column`, `by_interval` and `count_columns`
+  as arguments for generating series having counts of `count_columns` values
+  in rows grouped by `by_column` with `by_interval`.
+- The series have values which sum each column of `count_columns`, so
+  the number of generated series is the same number of `count_columns`.
+- If one of count columns is the same as `by_column`, the series having
   the number of rows as values will be also generated and its `count_index`
   in the result will be `None`.
 
