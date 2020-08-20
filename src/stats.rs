@@ -106,17 +106,17 @@ pub struct ElementCount {
     pub count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupElementCount {
-    pub value: GroupElement,
-    pub count: usize,
-}
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct NLargestCount {
     pub(crate) number_of_elements: usize,
     pub(crate) top_n: Option<Vec<ElementCount>>,
     pub(crate) mode: Option<Element>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupElementCount {
+    pub value: GroupElement,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

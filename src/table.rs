@@ -128,8 +128,6 @@ impl Table {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn statistics(
         &self,
