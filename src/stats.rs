@@ -34,6 +34,16 @@ pub enum Element {
     DateTime(NaiveDateTime),
 }
 
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Eq, Hash)]
+pub enum GroupElement {
+    Int(i64),
+    UInt(u32),
+    Enum(String),
+    Text(String),
+    IpAddr(IpAddr),
+    DateTime(NaiveDateTime),
+}
+
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FloatRange {
     pub smallest: f64,
@@ -61,10 +71,17 @@ impl fmt::Display for Element {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct Statistics {
-    pub column_statistics: Vec<ColumnStatistics>,
-    pub time_series: Vec<TimeSeries>,
+impl GroupElement {
+    pub fn cmp(&self, other: &GroupElement) -> std::cmp::Ordering {
+        match (self, other) {
+            (Self::Int(s), Self::Int(o)) => s.cmp(o),
+            (Self::UInt(s), Self::UInt(o)) => s.cmp(o),
+            (Self::Enum(s), Self::Enum(o)) | (Self::Text(s), Self::Text(o)) => s.cmp(o),
+            (Self::IpAddr(s), Self::IpAddr(o)) => s.cmp(o),
+            (Self::DateTime(s), Self::DateTime(o)) => s.cmp(o),
+            _ => std::cmp::Ordering::Equal,
+        }
+    }
 }
 
 /// Statistical summary of data of the same type.
@@ -90,8 +107,8 @@ pub struct ElementCount {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimeCount {
-    pub time: NaiveDateTime,
+pub struct GroupElementCount {
+    pub value: GroupElement,
     pub count: usize,
 }
 
@@ -103,9 +120,9 @@ pub struct NLargestCount {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimeSeries {
+pub struct GroupCount {
     pub count_index: Option<usize>, // if None, count just rows. If Some, count values of the column.
-    pub series: Vec<TimeCount>,
+    pub series: Vec<GroupElementCount>,
 }
 
 impl fmt::Display for Description {
