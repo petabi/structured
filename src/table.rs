@@ -18,8 +18,9 @@ use std::vec;
 use strum_macros::EnumString;
 
 use crate::stats::{
-    describe, n_largest_count, n_largest_count_datetime, n_largest_count_enum,
-    n_largest_count_float64, ColumnStatistics, Element, NLargestCount,
+    convert_time_intervals, describe, n_largest_count, n_largest_count_datetime,
+    n_largest_count_enum, n_largest_count_float64, ColumnStatistics, Element, GroupCount,
+    GroupElement, GroupElementCount, NLargestCount,
 };
 
 type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
@@ -151,7 +152,7 @@ impl Table {
                             .expect("top N number for each column should exist."),
                     )
                 } else if let ColumnType::DateTime = column_types[index] {
-                    let mut cn = 0_usize;
+                    let mut cn: usize = 0;
                     for i in 0..index {
                         if let ColumnType::DateTime = column_types[i] {
                             cn += 1;
@@ -197,6 +198,93 @@ impl Table {
                 ColumnStatistics {
                     description,
                     n_largest_count,
+                }
+            })
+            .collect()
+    }
+
+    // count means including only positive values. Implement other functions like sum_group_by, mean_group_by, etc. later.
+    #[must_use]
+    pub fn count_group_by(
+        &self,
+        rows: &[usize],
+        column_types: &Arc<Vec<ColumnType>>,
+        by_column: usize,
+        by_interval: Option<u32>,
+        count_columns: &Arc<Vec<usize>>,
+    ) -> Vec<GroupCount> {
+        let column_type = if let Some(column_type) = column_types.get(by_column) {
+            *column_type
+        } else {
+            return Vec::new();
+        };
+
+        let rows_interval: Vec<GroupElement> = match column_type {
+            ColumnType::DateTime => {
+                if let Some(by_interval) = by_interval {
+                    convert_time_intervals(
+                        self.columns
+                            .get(by_column)
+                            .expect("time column should exist"),
+                        rows,
+                        by_interval,
+                    )
+                    .iter()
+                    .map(|e| GroupElement::DateTime(*e))
+                    .collect()
+                } else {
+                    return Vec::new();
+                }
+            }
+            _ => return Vec::new(), // TODO: implement other types
+        };
+
+        count_columns
+            .iter()
+            .filter_map(|&count_index| {
+                let column = self.columns.get(count_index)?;
+
+                let mut element_count: HashMap<GroupElement, usize> = HashMap::new();
+                if by_column == count_index {
+                    for r in &rows_interval {
+                        *element_count.entry(r.clone()).or_insert(0) += 1; // count just rows
+                    }
+                } else if let ColumnType::Int64 = column_types[count_index] {
+                    let counts = column
+                        .view_iter::<Int64ArrayType, i64>(rows)
+                        .unwrap()
+                        .map(|v: &i64| v.to_usize().unwrap_or(0)) // if count is negative, then 0
+                        .collect::<Vec<_>>();
+
+                    for (index, r) in rows_interval.iter().enumerate() {
+                        *element_count.entry(r.clone()).or_insert(0) += counts[index];
+                        // count column values
+                    }
+                }
+
+                if element_count.is_empty() {
+                    None
+                } else {
+                    let mut series: Vec<GroupElementCount> = element_count
+                        .iter()
+                        .map(|(value, &count)| GroupElementCount {
+                            value: value.clone(),
+                            count,
+                        })
+                        .collect();
+
+                    series
+                        .sort_by(|a, b| a.value.partial_cmp(&b.value).expect("always comparable"));
+
+                    let count_index = if by_column == count_index {
+                        None
+                    } else {
+                        Some(count_index)
+                    };
+                    Some(GroupCount {
+                        count_index,
+                        series,
+                    })
                 }
             })
             .collect()
@@ -635,6 +723,61 @@ mod tests {
                 })
                 .collect(),
         )
+    }
+
+    #[test]
+    fn count_group_by_test() {
+        let schema = Schema::new(vec![
+            Field::new(DataType::Timestamp(TimeUnit::Second)),
+            Field::new(DataType::Int64),
+            Field::new(DataType::Int64),
+        ]);
+        let c0_v: Vec<i64> = vec![
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 10)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 13)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 15)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 22)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 22)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 31)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 33)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 1).and_hms(0, 1, 1).timestamp(),
+        ];
+        let c1_v: Vec<i64> = vec![1, 32, 3, 5, 2, 1, 3, 24];
+        let c2_v: Vec<i64> = vec![2, 33, 4, 6, 3, 2, 4, 25];
+        let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
+        let c1 = Column::try_from_slice::<Int64Type>(&c1_v).unwrap();
+        let c2 = Column::try_from_slice::<Int64Type>(&c2_v).unwrap();
+        let c_v: Vec<Column> = vec![c0, c1, c2];
+        let table = Table::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
+        let column_types = Arc::new(vec![
+            ColumnType::DateTime,
+            ColumnType::Int64,
+            ColumnType::Int64,
+        ]);
+        let rows = vec![0_usize, 3, 1, 4, 2, 6, 5, 7];
+        let count_columns = vec![0, 1, 2];
+        let group_count =
+            table.count_group_by(&rows, &column_types, 0, Some(30), &Arc::new(count_columns));
+        assert_eq!(None, group_count[0].count_index);
+        assert_eq!(Some(1), group_count[1].count_index);
+        assert_eq!(Some(2), group_count[2].count_index);
+        assert_eq!(5_usize, group_count[0].series[0].count);
+        assert_eq!(43_usize, group_count[1].series[0].count);
+        assert_eq!(48_usize, group_count[2].series[0].count);
     }
 
     #[test]
