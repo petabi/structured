@@ -273,7 +273,8 @@ impl Table {
                         })
                         .collect();
 
-                    series.sort_by(|a, b| a.value.cmp(&b.value));
+                    series
+                        .sort_by(|a, b| a.value.partial_cmp(&b.value).expect("always comparable"));
 
                     let count_index = if by_column == count_index {
                         None

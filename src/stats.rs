@@ -71,15 +71,15 @@ impl fmt::Display for Element {
     }
 }
 
-impl GroupElement {
-    pub fn cmp(&self, other: &GroupElement) -> std::cmp::Ordering {
+impl PartialOrd for GroupElement {
+    fn partial_cmp(&self, other: &GroupElement) -> Option<std::cmp::Ordering> {
         match (self, other) {
-            (Self::Int(s), Self::Int(o)) => s.cmp(o),
-            (Self::UInt(s), Self::UInt(o)) => s.cmp(o),
-            (Self::Enum(s), Self::Enum(o)) | (Self::Text(s), Self::Text(o)) => s.cmp(o),
-            (Self::IpAddr(s), Self::IpAddr(o)) => s.cmp(o),
-            (Self::DateTime(s), Self::DateTime(o)) => s.cmp(o),
-            _ => std::cmp::Ordering::Equal,
+            (Self::Int(s), Self::Int(o)) => Some(s.cmp(o)),
+            (Self::UInt(s), Self::UInt(o)) => Some(s.cmp(o)),
+            (Self::Enum(s), Self::Enum(o)) | (Self::Text(s), Self::Text(o)) => Some(s.cmp(o)),
+            (Self::IpAddr(s), Self::IpAddr(o)) => Some(s.cmp(o)),
+            (Self::DateTime(s), Self::DateTime(o)) => Some(s.cmp(o)),
+            _ => None,
         }
     }
 }

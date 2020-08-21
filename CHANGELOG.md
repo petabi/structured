@@ -45,6 +45,5 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 [Unreleased]: https://github.com/petabi/structured/compare/0.2.0...master
 [0.2.0]: https://github.com/petabi/structured/compare/0.1.1...0.2.0
-[0.2.0]: https://github.com/petabi/structured/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/petabi/structured/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/petabi/structured/tree/0.1.0
