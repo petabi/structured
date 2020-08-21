@@ -213,7 +213,13 @@ impl Table {
         by_interval: Option<u32>,
         count_columns: &Arc<Vec<usize>>,
     ) -> Vec<GroupCount> {
-        let rows_interval: Vec<GroupElement> = match column_types[by_column] {
+        let column_type = if let Some(column_type) = column_types.get(by_column) {
+            *column_type
+        } else {
+            return Vec::new();
+        };
+
+        let rows_interval: Vec<GroupElement> = match column_type {
             ColumnType::DateTime => {
                 if let Some(by_interval) = by_interval {
                     convert_time_intervals(
@@ -236,10 +242,7 @@ impl Table {
         count_columns
             .iter()
             .filter_map(|&count_index| {
-                let column = self
-                    .columns
-                    .get(count_index)
-                    .expect("count column should exist");
+                let column = self.columns.get(count_index)?;
 
                 let mut element_count: HashMap<GroupElement, usize> = HashMap::new();
                 if by_column == count_index {
