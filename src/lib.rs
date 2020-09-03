@@ -10,8 +10,8 @@ pub(crate) mod util;
 
 pub use array::{Array, BinaryArray, StringArray};
 pub use datatypes::{
-    DataType, Field, Float64Type, Int32Type, Int64Type, Schema, TimeUnit, TimestampSecondType,
-    UInt32Type, UInt8Type,
+    DataType, Field, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, Schema,
+    TimeUnit, TimestampSecondType, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
 };
 pub use stats::{
     ColumnStatistics, Description, Element, ElementCount, FloatRange, GroupCount, GroupElement,

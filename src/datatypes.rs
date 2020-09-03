@@ -12,10 +12,15 @@ use std::str::FromStr;
 /// Supported types.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataType {
+    Int8,
+    Int16,
     Int32,
     Int64,
     UInt8,
+    UInt16,
     UInt32,
+    UInt64,
+    Float32,
     Float64,
     Utf8,
     Binary,
@@ -58,7 +63,12 @@ impl<'de> Visitor<'de> for DataTypeVisitor {
         match props.name {
             Some("utf8") => Ok(DataType::Utf8),
             Some("binary") => Ok(DataType::Binary),
-            Some("floatingpoint") => Ok(DataType::Float64),
+            Some("floatingpoint") => match props.bit_width {
+                Some(32) => Ok(DataType::Float32),
+                Some(64) => Ok(DataType::Float64),
+                Some(_) => Err(A::Error::custom("bit_width not supported")),
+                None => Err(A::Error::custom("bit_width missing or invalid")),
+            },
             Some("int") => match props.is_signed {
                 Some(true) => match props.bit_width {
                     Some(32) => Ok(DataType::Int32),
@@ -96,6 +106,20 @@ impl Serialize for DataType {
         S: Serializer,
     {
         match self {
+            Self::Int8 => {
+                let mut map = serializer.serialize_map(Some(3))?;
+                map.serialize_entry("name", "int")?;
+                map.serialize_entry("bitWidth", &8)?;
+                map.serialize_entry("isSigned", &true)?;
+                map.end()
+            }
+            Self::Int16 => {
+                let mut map = serializer.serialize_map(Some(3))?;
+                map.serialize_entry("name", "int")?;
+                map.serialize_entry("bitWidth", &16)?;
+                map.serialize_entry("isSigned", &true)?;
+                map.end()
+            }
             Self::Int32 => {
                 let mut map = serializer.serialize_map(Some(3))?;
                 map.serialize_entry("name", "int")?;
@@ -117,11 +141,31 @@ impl Serialize for DataType {
                 map.serialize_entry("isSigned", &false)?;
                 map.end()
             }
+            Self::UInt16 => {
+                let mut map = serializer.serialize_map(Some(3))?;
+                map.serialize_entry("name", "int")?;
+                map.serialize_entry("bitWidth", &16)?;
+                map.serialize_entry("isSigned", &false)?;
+                map.end()
+            }
             Self::UInt32 => {
                 let mut map = serializer.serialize_map(Some(3))?;
                 map.serialize_entry("name", "int")?;
                 map.serialize_entry("bitWidth", &32)?;
                 map.serialize_entry("isSigned", &false)?;
+                map.end()
+            }
+            Self::UInt64 => {
+                let mut map = serializer.serialize_map(Some(3))?;
+                map.serialize_entry("name", "int")?;
+                map.serialize_entry("bitWidth", &64)?;
+                map.serialize_entry("isSigned", &false)?;
+                map.end()
+            }
+            Self::Float32 => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("name", "floatingpoint")?;
+                map.serialize_entry("precision", "SINGLE")?;
                 map.end()
             }
             Self::Float64 => {
@@ -165,10 +209,15 @@ pub struct Field {
 
 pub trait NativeType: fmt::Debug + Send + Sync + Copy + PartialOrd + FromStr + 'static {}
 
+impl NativeType for i8 {}
+impl NativeType for i16 {}
 impl NativeType for i32 {}
 impl NativeType for i64 {}
 impl NativeType for u8 {}
+impl NativeType for u16 {}
 impl NativeType for u32 {}
+impl NativeType for u64 {}
+impl NativeType for f32 {}
 impl NativeType for f64 {}
 
 pub trait RawBytes {
@@ -231,6 +280,22 @@ macro_rules! make_primitive_type {
 }
 
 make_primitive_type!(
+    /// Primitive data type for `i8`.
+    Int8Type,
+    i8,
+    DataType::Int8,
+    8,
+    0_i8
+);
+make_primitive_type!(
+    /// Primitive data type for `i16`.
+    Int16Type,
+    i16,
+    DataType::Int16,
+    16,
+    0_i16
+);
+make_primitive_type!(
     /// Primitive data type for `i32`.
     Int32Type,
     i32,
@@ -255,12 +320,36 @@ make_primitive_type!(
     0_u8
 );
 make_primitive_type!(
+    /// Primitive data type for `u16`.
+    UInt16Type,
+    u16,
+    DataType::UInt16,
+    16,
+    0_u16
+);
+make_primitive_type!(
     /// Primitive data type for `u32`.
     UInt32Type,
     u32,
     DataType::UInt32,
     32,
     0_u32
+);
+make_primitive_type!(
+    /// Primitive data type for `u64`.
+    UInt64Type,
+    u64,
+    DataType::UInt64,
+    64,
+    0_u64
+);
+make_primitive_type!(
+    /// Primitive data type for `f32`.
+    Float32Type,
+    f32,
+    DataType::Float32,
+    32,
+    0_f32
 );
 make_primitive_type!(
     /// Primitive data type for `f64`.
@@ -348,6 +437,18 @@ mod tests {
             r#"{"fields":[{"type":{"name":"binary"}}],"metadata":{"Key":"Value"}}"#
         );
 
+        let schema = Schema::new(vec![Field::new(DataType::Int8)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"int","bitWidth":8,"isSigned":true}}],"metadata":{}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::Int16)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"int","bitWidth":16,"isSigned":true}}],"metadata":{}}"#
+        );
+
         let schema = Schema::new(vec![Field::new(DataType::Int32)]);
         assert_eq!(
             serde_json::to_string(&schema).unwrap(),
@@ -366,10 +467,28 @@ mod tests {
             r#"{"fields":[{"type":{"name":"int","bitWidth":8,"isSigned":false}}],"metadata":{}}"#
         );
 
+        let schema = Schema::new(vec![Field::new(DataType::UInt16)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"int","bitWidth":16,"isSigned":false}}],"metadata":{}}"#
+        );
+
         let schema = Schema::new(vec![Field::new(DataType::UInt32)]);
         assert_eq!(
             serde_json::to_string(&schema).unwrap(),
             r#"{"fields":[{"type":{"name":"int","bitWidth":32,"isSigned":false}}],"metadata":{}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::UInt64)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"int","bitWidth":64,"isSigned":false}}],"metadata":{}}"#
+        );
+
+        let schema = Schema::new(vec![Field::new(DataType::Float32)]);
+        assert_eq!(
+            serde_json::to_string(&schema).unwrap(),
+            r#"{"fields":[{"type":{"name":"floatingpoint","precision":"SINGLE"}}],"metadata":{}}"#
         );
 
         let schema = Schema::new(vec![Field::new(DataType::Float64)]);
