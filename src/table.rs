@@ -1,6 +1,7 @@
 use crate::array::{primitive, Array, BinaryArray, Builder, StringArray};
 use crate::datatypes::{
-    Float64Type, Int32Type, Int64Type, PrimitiveType, TimeUnit, UInt32Type, UInt8Type,
+    Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, PrimitiveType, TimeUnit,
+    UInt16Type, UInt32Type, UInt64Type, UInt8Type,
 };
 use crate::memory::AllocationError;
 use crate::{DataType, Schema};
@@ -505,6 +506,16 @@ impl PartialEq for Column {
         }
 
         match data_type {
+            DataType::Int8 => self
+                .iter::<Int8ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<Int8ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
+            DataType::Int16 => self
+                .iter::<Int16ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<Int16ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
             DataType::Int32 => self
                 .iter::<Int32ArrayType>()
                 .expect("invalid array")
@@ -520,10 +531,25 @@ impl PartialEq for Column {
                 .expect("invalid array")
                 .zip(other.iter::<UInt8ArrayType>().expect("invalid array"))
                 .all(|(x, y)| x == y),
+            DataType::UInt16 => self
+                .iter::<UInt16ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<UInt16ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
             DataType::UInt32 => self
                 .iter::<UInt32ArrayType>()
                 .expect("invalid array")
                 .zip(other.iter::<UInt32ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
+            DataType::UInt64 => self
+                .iter::<UInt64ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<UInt64ArrayType>().expect("invalid array"))
+                .all(|(x, y)| x == y),
+            DataType::Float32 => self
+                .iter::<Float32ArrayType>()
+                .expect("invalid array")
+                .zip(other.iter::<Float32ArrayType>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::Float64 => self
                 .iter::<Float64ArrayType>()
@@ -577,6 +603,18 @@ macro_rules! make_array_type {
 }
 
 make_array_type!(
+    /// Data type of a dynamic array whose elements are `i8`s.
+    Int8ArrayType,
+    primitive::Array<Int8Type>,
+    i8
+);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are `i16`s.
+    Int16ArrayType,
+    primitive::Array<Int16Type>,
+    i16
+);
+make_array_type!(
     /// Data type of a dynamic array whose elements are `i32`s.
     Int32ArrayType,
     primitive::Array<Int32Type>,
@@ -595,10 +633,28 @@ make_array_type!(
     u8
 );
 make_array_type!(
+    /// Data type of a dynamic array whose elements are `u16`s.
+    UInt16ArrayType,
+    primitive::Array<UInt16Type>,
+    u8
+);
+make_array_type!(
     /// Data type of a dynamic array whose elements are `u32`s.
     UInt32ArrayType,
     primitive::Array<UInt32Type>,
     u32
+);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are `u64`s.
+    UInt64ArrayType,
+    primitive::Array<UInt64Type>,
+    u64
+);
+make_array_type!(
+    /// Data type of a dynamic array whose elements are `f64`s.
+    Float32ArrayType,
+    primitive::Array<Float32Type>,
+    f64
 );
 make_array_type!(
     /// Data type of a dynamic array whose elements are `f64`s.
