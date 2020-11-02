@@ -16,10 +16,7 @@ impl Bitmap {
         } else {
             num_bytes + 64 - r
         };
-        let mut v = Vec::with_capacity(len);
-        for _ in 0..len {
-            v.push(255); // 1 means not null.
-        }
+        let v = vec![255; len];
         debug_assert!(v.len() <= usize::max_value() / 8 + 1);
         // The following is safe because the assertion above holds.
         let bits = unsafe { Buffer::from_small_slice(&v[..]) };
