@@ -13,7 +13,7 @@ use std::vec;
 
 use crate::table::{
     BinaryArrayType, Column, ColumnType, Float64ArrayType, Int64ArrayType, UInt32ArrayType,
-    Utf8ArrayType,
+    UInt64ArrayType, Utf8ArrayType,
 };
 
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
@@ -25,6 +25,7 @@ const MIN_TIME_INTERVAL: u32 = 30; // seconds
 pub enum Element {
     Int(i64),
     UInt(u32),
+    UInt64(u64),
     Enum(String), // describe() converts UInt -> Enum using enum maps. Without maps, by to_string().
     Float(f64),
     FloatRange(FloatRange),
@@ -55,6 +56,7 @@ impl fmt::Display for Element {
         match self {
             Self::Int(x) => write!(f, "{}", x),
             Self::UInt(x) => write!(f, "{}", x),
+            Self::UInt64(x) => write!(f, "{}", x),
             Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
             Self::Binary(x) => write!(f, "{:#?}", x),
             Self::Float(x) => write!(f, "{}", x),
@@ -329,13 +331,13 @@ pub(crate) fn n_largest_count(
             );
         }
         ColumnType::Enum => {
-            let iter = column.view_iter::<UInt32ArrayType, u32>(rows).unwrap();
+            let iter = column.view_iter::<UInt64ArrayType, u64>(rows).unwrap();
             top_n!(
                 iter,
                 rows.len(),
                 n_largest_count,
-                u32,
-                Element::UInt,
+                u64,
+                Element::UInt64,
                 number_of_top_n
             );
         }
