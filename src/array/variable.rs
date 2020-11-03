@@ -163,8 +163,7 @@ impl StringBuilder {
         self.values.extend_from_slice(val.as_bytes())?;
         debug_assert!(i32::try_from(self.values.len()).is_ok());
         self.offsets
-            .try_push(i32::from_usize(self.values.len()).expect("should not exceed 2^31 - 1"))?;
-        Ok(())
+            .try_push(i32::from_usize(self.values.len()).expect("should not exceed 2^31 - 1"))
     }
 
     fn into_array(self) -> StringArray {
@@ -340,8 +339,7 @@ impl BinaryBuilder {
         self.values.extend_from_slice(val)?;
         debug_assert!(i32::try_from(self.values.len()).is_ok());
         self.offsets
-            .try_push(i32::from_usize(self.values.len()).expect("should not exceed 2^31 - 1"))?;
-        Ok(())
+            .try_push(i32::from_usize(self.values.len()).expect("should not exceed 2^31 - 1"))
     }
 
     fn into_array(self) -> BinaryArray {
