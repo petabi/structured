@@ -1,19 +1,16 @@
 use crate::array::{variable, Array, BinaryBuilder, Builder, PrimitiveBuilder, StringBuilder};
 use crate::datatypes::{
-    DataType, Field, Float64Type, Int64Type, PrimitiveType, Schema, UInt32Type,
+    DataType, Field, Float64Type, Int64Type, PrimitiveType, Schema, UInt32Type, UInt64Type,
 };
 use crate::memory::AllocationError;
 use crate::record;
 use csv_core::ReadRecordResult;
 use dashmap::DashMap;
-use std::collections::HashMap;
 use std::fmt;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::io::{BufRead, BufReader, Read};
 use std::str::{self, FromStr};
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
 struct Record {
     fields: Vec<u8>,
@@ -263,25 +260,22 @@ fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
     )
 }
 
-type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
+type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u64, usize)>>>>;
 
 /// CSV reader
-pub struct Reader<'a, I, H>
+pub struct Reader<'a, I>
 where
     I: Iterator<Item = &'a [u8]>,
-    H: std::hash::BuildHasher,
 {
     record_iter: I,
     batch_size: usize,
     parsers: &'a [FieldParser],
     labels: &'a ConcurrentEnumMaps,
-    enum_max_values: Arc<HashMap<usize, AtomicU32, H>>,
 }
 
-impl<'a, I, H> Reader<'a, I, H>
+impl<'a, I> Reader<'a, I>
 where
     I: Iterator<Item = &'a [u8]>,
-    H: std::hash::BuildHasher,
 {
     /// Creates a `Reader` from a byte-sequence iterator.
     pub fn new(
@@ -289,14 +283,12 @@ where
         batch_size: usize,
         parsers: &'a [FieldParser],
         labels: &'a ConcurrentEnumMaps,
-        enum_max_values: Arc<HashMap<usize, AtomicU32, H>>,
     ) -> Self {
         Reader {
             record_iter,
             batch_size,
             parsers,
             labels,
-            enum_max_values,
         }
     }
 
@@ -351,34 +343,17 @@ where
                     build_primitive_array::<UInt32Type, UInt32Parser>(&rows, i, parse)?
                 }
                 FieldParser::Dict => {
-                    let mut builder = PrimitiveBuilder::<UInt32Type>::with_capacity(rows.len())?;
+                    let mut builder = PrimitiveBuilder::<UInt64Type>::with_capacity(rows.len())?;
                     for r in &rows {
                         let key = std::str::from_utf8(r.get(i).unwrap_or_default())?;
-                        let value = self.labels.get(&i).map_or_else(u32::max_value, |map| {
-                            let mut entry = map.entry(key.to_string()).or_insert_with(|| {
-                                self.enum_max_values.get(&i).map_or(
-                                    (u32::max_value(), 0_usize),
-                                    |v| {
-                                        let len = {
-                                            let mut len;
-                                            loop {
-                                                // u32::max_value means
-                                                // something wrong, and 0 means
-                                                // unmapped. And, enum value
-                                                // starts with 1.
-                                                len = v.fetch_add(1, Ordering::Relaxed) + 1;
-                                                if 0 < len && len < u32::max_value() {
-                                                    break;
-                                                }
-                                            }
-                                            len
-                                        };
-                                        (len, 0_usize)
-                                    },
-                                )
-                            });
+                        let value = self.labels.get(&i).map_or_else(u64::max_value, |map| {
+                            let mut hasher = map.hasher().build_hasher();
+                            key.hash(&mut hasher);
+                            let val = hasher.finish();
+                            let mut entry =
+                                map.entry(key.to_string()).or_insert_with(|| (val, 0_usize));
                             *entry.value_mut() = (entry.value().0, entry.value().1 + 1);
-                            entry.value().0
+                            val
                         });
                         builder.try_push(value)?;
                     }
@@ -639,21 +614,12 @@ mod tests {
         ];
         let (data, labels, columns) = get_test_data();
         let c_enum_maps = convert_to_conc_enum_maps(&labels);
-        let enum_max_values: HashMap<usize, AtomicU32> = c_enum_maps
-            .iter()
-            .map(|m| {
-                (
-                    *m.key(),
-                    AtomicU32::new(m.value().len().to_u32().unwrap_or(u32::max_value())),
-                )
-            })
-            .collect();
+
         let mut reader = Reader::new(
             data.iter().map(|d| d.as_slice()),
             data.len(),
             &parsers,
             &c_enum_maps,
-            Arc::new(enum_max_values),
         );
         let result: Vec<Column> = if let Some(batch) = reader.next_batch().unwrap() {
             batch.columns().iter().map(|c| c.clone().into()).collect()
@@ -671,22 +637,8 @@ mod tests {
         let record = "1\n".to_string().into_bytes();
         let row = vec![record.as_slice()];
         let c_enum_maps = convert_to_conc_enum_maps(&labels);
-        let enum_max_values: HashMap<usize, AtomicU32> = c_enum_maps
-            .iter()
-            .map(|m| {
-                (
-                    *m.key(),
-                    AtomicU32::new(m.value().len().to_u32().unwrap_or(u32::max_value())),
-                )
-            })
-            .collect();
-        let mut reader = Reader::new(
-            row.iter().cloned(),
-            row.len(),
-            &parsers,
-            &c_enum_maps,
-            Arc::new(enum_max_values),
-        );
+
+        let mut reader = Reader::new(row.iter().cloned(), row.len(), &parsers, &c_enum_maps);
         let result: Vec<Column> = if let Some(batch) = reader.next_batch().unwrap() {
             batch.columns().iter().map(|c| c.clone().into()).collect()
         } else {
