@@ -24,8 +24,8 @@ use crate::stats::{
     GroupElement, GroupElementCount, NLargestCount,
 };
 
-type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
-type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
+type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u64, usize)>>>>;
+type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u64, Vec<String>>>>>;
 
 /// The data type of a table column.
 #[derive(Clone, Copy, Debug, Deserialize, EnumString, PartialEq, Serialize)]
@@ -312,7 +312,7 @@ impl Table {
                 .expect("safe");
 
             let mut number_of_events = 0_usize;
-            let mut map_vector: Vec<(String, u32, usize)> = column_map
+            let mut map_vector: Vec<(String, u64, usize)> = column_map
                 .iter()
                 .map(|m| {
                     number_of_events += m.value().1;
@@ -358,15 +358,15 @@ impl Table {
     fn limit_enum_values(
         &mut self,
         column_index: usize,
-        mapped_enums: &HashSet<u32>,
+        mapped_enums: &HashSet<u64>,
     ) -> Result<(), AllocationError> {
         let col = &mut self.columns[column_index];
-        let mut builder = primitive::Builder::<UInt32Type>::with_capacity(col.len())?;
-        for val in col.iter::<UInt32ArrayType>().unwrap() {
+        let mut builder = primitive::Builder::<UInt64Type>::with_capacity(col.len())?;
+        for val in col.iter::<UInt64ArrayType>().unwrap() {
             let new_val = if mapped_enums.contains(val) {
                 *val
             } else {
-                0_u32 // if unmapped out of the predefined rate, enum value set to 0_u32.
+                0_u64 // if unmapped out of the predefined rate, enum value set to 0_u32.
             };
             builder.try_push(new_val)?;
         }

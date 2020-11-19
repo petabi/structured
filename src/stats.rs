@@ -389,7 +389,7 @@ pub(crate) fn n_largest_count(
 pub(crate) fn n_largest_count_enum(
     column: &Column,
     rows: &[usize],
-    reverse_map: &Arc<HashMap<u32, Vec<String>>>,
+    reverse_map: &Arc<HashMap<u64, Vec<String>>>,
     number_of_top_n: u32,
 ) -> NLargestCount {
     let n_largest_count = n_largest_count(column, rows, ColumnType::Enum, number_of_top_n);
@@ -436,7 +436,7 @@ pub(crate) fn n_largest_count_enum(
                         top_n
                             .iter()
                             .map(|elem| {
-                                if let Element::UInt(value) = elem.value {
+                                if let Element::UInt64(value) = elem.value {
                                     ElementCount {
                                         value: Element::Enum(reverse_map.get(&value).map_or(
                                             "_NO_MAP_".to_string(),
@@ -466,7 +466,7 @@ pub(crate) fn n_largest_count_enum(
                 },
                 match n_largest_count.get_mode() {
                     Some(mode) => {
-                        if let Element::UInt(value) = mode {
+                        if let Element::UInt64(value) = mode {
                             Some(Element::Enum(reverse_map.get(value).map_or(
                                 "_NO_MAP_".to_string(),
                                 |v| {
