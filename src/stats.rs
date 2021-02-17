@@ -282,9 +282,11 @@ macro_rules! top_n {
 
 #[must_use]
 pub(crate) fn describe(column: &Column, rows: &[usize], column_type: ColumnType) -> Description {
-    let mut description = Description::default();
+    let mut description = Description {
+        count: rows.len(),
+        ..Description::default()
+    };
 
-    description.count = rows.len();
     match column_type {
         ColumnType::Int64 => {
             let iter = column.view_iter::<Int64ArrayType, i64>(rows).unwrap();
