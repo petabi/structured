@@ -443,7 +443,7 @@ pub(crate) fn n_largest_count_enum(
                                                 for (i, e) in v.iter().enumerate() {
                                                     s.push_str(e);
                                                     if i < v.len() - 1 {
-                                                        s.push_str("|")
+                                                        s.push('|')
                                                     }
                                                 }
                                                 s
@@ -472,7 +472,7 @@ pub(crate) fn n_largest_count_enum(
                                     for (i, e) in v.iter().enumerate() {
                                         s.push_str(e);
                                         if i < v.len() - 1 {
-                                            s.push_str("|")
+                                            s.push('|')
                                         }
                                     }
                                     s
