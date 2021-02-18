@@ -1,4 +1,4 @@
-use crate::datatypes::{NativeType, PrimitiveType, RawBytes};
+use crate::datatypes::{PrimitiveType, RawBytes};
 use crate::util::bit_util;
 use std::alloc::{alloc, dealloc, realloc, Layout};
 use std::cmp;
@@ -69,8 +69,8 @@ impl Buffer {
     /// # Safety
     ///
     /// The stored data should be valid values of type `T`.
-    #[allow(dead_code)]
-    pub unsafe fn as_slice<T: NativeType>(&self) -> &[T] {
+    #[cfg(test)]
+    pub unsafe fn as_slice<T: crate::datatypes::NativeType>(&self) -> &[T] {
         assert_eq!(self.len() % mem::size_of::<T>(), 0);
         slice::from_raw_parts(
             self.raw_data() as *const T,
