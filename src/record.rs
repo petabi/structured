@@ -1,6 +1,6 @@
 //! Definitions to help handling CSV data as a set of records.
 
-use crate::array::Array;
+use arrow::array::Array;
 use std::sync::Arc;
 
 /// A batch of multi-field data.
