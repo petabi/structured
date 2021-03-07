@@ -1,6 +1,6 @@
 [package]
 name = "structured"
-version = "0.3.0"
+version = "0.4.0"
 description = "Data structures to handle large, structured data."
 homepage = "https://github.com/petabi/structured"
 repository = "https://github.com/petabi/structured"
