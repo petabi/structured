@@ -1,3 +1,4 @@
+use arrow::datatypes::{Float64Type, Int64Type, UInt32Type};
 use chrono::NaiveDateTime;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -7,14 +8,10 @@ use std::fmt;
 use std::hash::Hash;
 use std::iter::Iterator;
 use std::net::{IpAddr, Ipv4Addr};
-use std::ops::Deref;
 use std::sync::Arc;
 use std::vec;
 
-use crate::table::{
-    BinaryArrayType, Column, ColumnType, Float64ArrayType, Int64ArrayType, UInt32ArrayType,
-    Utf8ArrayType,
-};
+use crate::table::{Column, ColumnType};
 
 const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const MAX_TIME_INTERVAL: u32 = 86_400; // one day in seconds
@@ -260,7 +257,7 @@ macro_rules! mean_deviation {
 
 macro_rules! top_n {
     ( $iter:expr, $len:expr, $d:expr, $t1:ty, $t2:expr, $num_of_top_n:expr ) => {
-        let top_n_native: Vec<(&$t1, usize)> = count_sort($iter);
+        let top_n_native: Vec<($t1, usize)> = count_sort($iter);
         $d.number_of_elements = top_n_native.len();
         let mut top_n: Vec<ElementCount> = Vec::new();
         let num_of_top_n = $num_of_top_n.to_usize().expect("safe: u32 -> usize");
@@ -289,18 +286,18 @@ pub(crate) fn describe(column: &Column, rows: &[usize], column_type: ColumnType)
 
     match column_type {
         ColumnType::Int64 => {
-            let iter = column.view_iter::<Int64ArrayType, i64>(rows).unwrap();
+            let iter = column.primitive_iter::<Int64Type>(rows).unwrap();
             min_max!(iter, description, Element::Int);
-            let iter = column.view_iter::<Int64ArrayType, i64>(rows).unwrap();
+            let iter = column.primitive_iter::<Int64Type>(rows).unwrap();
             #[allow(clippy::cast_precision_loss)] // 52-bit precision is good enough
-            let f_values: Vec<f64> = iter.map(|v: &i64| *v as f64).collect();
+            let f_values: Vec<f64> = iter.map(|v: i64| v as f64).collect();
             mean_deviation!(f_values, i64, description);
         }
         ColumnType::Float64 => {
-            let iter = column.view_iter::<Float64ArrayType, f64>(rows).unwrap();
+            let iter = column.primitive_iter::<Float64Type>(rows).unwrap();
             min_max!(iter, description, Element::Float);
-            let iter = column.view_iter::<Float64ArrayType, f64>(rows).unwrap();
-            let values = iter.cloned().collect::<Vec<_>>();
+            let iter = column.primitive_iter::<Float64Type>(rows).unwrap();
+            let values = iter.collect::<Vec<_>>();
             mean_deviation!(values, f64, description);
         }
         _ => (),
@@ -320,7 +317,7 @@ pub(crate) fn n_largest_count(
 
     match column_type {
         ColumnType::Int64 => {
-            let iter = column.view_iter::<Int64ArrayType, i64>(rows).unwrap();
+            let iter = column.primitive_iter::<Int64Type>(rows).unwrap();
             top_n!(
                 iter,
                 rows.len(),
@@ -331,7 +328,7 @@ pub(crate) fn n_largest_count(
             );
         }
         ColumnType::Enum => {
-            let iter = column.view_iter::<UInt32ArrayType, u32>(rows).unwrap();
+            let iter = column.primitive_iter::<UInt32Type>(rows).unwrap();
             top_n!(
                 iter,
                 rows.len(),
@@ -342,38 +339,38 @@ pub(crate) fn n_largest_count(
             );
         }
         ColumnType::Utf8 => {
-            let iter = column.view_iter::<Utf8ArrayType, str>(rows).unwrap();
+            let iter = column.string_iter(rows).unwrap();
             top_n!(
                 iter,
                 rows.len(),
                 n_largest_count,
-                str,
+                &str,
                 Element::Text,
                 number_of_top_n
             );
         }
         ColumnType::Binary => {
-            let iter = column.view_iter::<BinaryArrayType, [u8]>(rows).unwrap();
+            let iter = column.binary_iter(rows).unwrap();
             top_n!(
                 iter,
                 rows.len(),
                 n_largest_count,
-                [u8],
+                &[u8],
                 Element::Binary,
                 number_of_top_n
             );
         }
         ColumnType::IpAddr => {
             let values = column
-                .view_iter::<UInt32ArrayType, u32>(rows)
+                .primitive_iter::<UInt32Type>(rows)
                 .unwrap()
-                .map(|v: &u32| IpAddr::from(Ipv4Addr::from(*v)))
+                .map(|v| IpAddr::from(Ipv4Addr::from(v)))
                 .collect::<Vec<_>>();
             top_n!(
                 values.iter(),
                 rows.len(),
                 n_largest_count,
-                IpAddr,
+                &IpAddr,
                 Element::IpAddr,
                 number_of_top_n
             );
@@ -507,7 +504,7 @@ pub(crate) fn n_largest_count_float64(
 ) -> NLargestCount {
     let mut n_largest_count = NLargestCount::default();
 
-    let iter = column.view_iter::<Float64ArrayType, f64>(rows).unwrap();
+    let iter = column.primitive_iter::<Float64Type>(rows).unwrap();
     let (rc, rt) = top_n_f64(iter, min, max, number_of_top_n);
     n_largest_count.number_of_elements = rc;
     n_largest_count.mode = Some(rt[0].value.clone());
@@ -530,7 +527,7 @@ pub(crate) fn n_largest_count_datetime(
         values.iter(),
         rows.len(),
         n_largest_count,
-        NaiveDateTime,
+        &NaiveDateTime,
         Element::DateTime,
         number_of_top_n
     );
@@ -559,12 +556,12 @@ pub(crate) fn convert_time_intervals(
     let time_interval = i64::from(time_interval);
 
     column
-        .view_iter::<Int64ArrayType, i64>(rows)
+        .primitive_iter::<Int64Type>(rows)
         .unwrap()
-        .map(|v: &i64| {
+        .map(|v| {
             // The first interval of each day should start with 00:00:00.
-            let mut ts = *v / (24 * 60 * 60) * (24 * 60 * 60);
-            ts += (*v - ts) / time_interval * time_interval;
+            let mut ts = v / (24 * 60 * 60) * (24 * 60 * 60);
+            ts += (v - ts) / time_interval * time_interval;
             NaiveDateTime::from_timestamp(ts, 0)
         })
         .collect::<Vec<_>>()
@@ -590,8 +587,7 @@ where
 
 fn top_n_f64<I>(iter: I, min: f64, max: f64, number_of_top_n: u32) -> (usize, Vec<ElementCount>)
 where
-    I: Iterator,
-    I::Item: Deref<Target = f64>,
+    I: Iterator<Item = f64>,
 {
     let interval: f64 = (max - min) / NUM_OF_FLOAT_INTERVALS.to_f64().expect("<= 100");
     let mut count: Vec<(usize, usize)> = vec![(0, 0); NUM_OF_FLOAT_INTERVALS];
@@ -604,7 +600,7 @@ where
         let mut slot = if interval == 0.0_f64 {
             0_usize
         } else {
-            ((*v - min) / interval).floor().to_usize().expect("< 100")
+            ((v - min) / interval).floor().to_usize().expect("< 100")
         };
         if slot == NUM_OF_FLOAT_INTERVALS {
             slot = NUM_OF_FLOAT_INTERVALS - 1;
@@ -646,24 +642,19 @@ struct MinMax<T> {
 }
 
 /// Returns the minimum and maximum values.
-fn find_min_max<I, T>(mut iter: I) -> Option<MinMax<<I::Item as Deref>::Target>>
+fn find_min_max<I>(mut iter: I) -> Option<MinMax<I::Item>>
 where
     I: Iterator,
-    I::Item: Deref<Target = T>,
-    T: PartialOrd + Clone,
+    I::Item: Copy + PartialOrd,
 {
-    let mut min = if let Some(first) = iter.next() {
-        (*first).clone()
-    } else {
-        return None;
-    };
-    let mut max = min.clone();
+    let mut min = iter.next()?;
+    let mut max = min;
 
     for v in iter {
-        if min > *v {
-            min = (*v).clone();
-        } else if max < *v {
-            max = (*v).clone();
+        if min > v {
+            min = v;
+        } else if max < v {
+            max = v;
         }
     }
     Some(MinMax { min, max })

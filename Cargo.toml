@@ -17,6 +17,7 @@ exclude = ["./github"]
 codecov = { repository = "petabi/structured", service = "github" }
 
 [dependencies]
+arrow = "3"
 chrono = { version = "^0.4.9", features = ["serde"] }
 csv-core = "0.1"
 dashmap = "4"

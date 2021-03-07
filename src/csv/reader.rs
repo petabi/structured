@@ -1,9 +1,9 @@
-use crate::array::{variable, Array, BinaryBuilder, Builder, PrimitiveBuilder, StringBuilder};
-use crate::datatypes::{
-    DataType, Field, Float64Type, Int64Type, PrimitiveType, Schema, UInt32Type,
-};
-use crate::memory::AllocationError;
 use crate::record;
+use arrow::array::{Array, BinaryBuilder, PrimitiveBuilder, StringBuilder};
+use arrow::datatypes::{
+    ArrowPrimitiveType, DataType, Field, Float64Type, Int64Type, Schema, UInt32Type,
+};
+use arrow::error::ArrowError;
 use csv_core::ReadRecordResult;
 use dashmap::DashMap;
 use std::collections::HashMap;
@@ -305,7 +305,7 @@ where
     /// # Errors
     ///
     /// Returns an error of parsing a field fails.
-    pub fn next_batch(&mut self) -> Result<Option<record::Batch>, variable::Error> {
+    pub fn next_batch(&mut self) -> Result<Option<record::Batch>, arrow::error::ArrowError> {
         let mut rows = Vec::with_capacity(self.batch_size);
         let mut csv_reader = csv_core::Reader::new();
         for _ in 0..self.batch_size {
@@ -328,32 +328,36 @@ where
         for (i, parser) in self.parsers.iter().enumerate() {
             let col = match parser {
                 FieldParser::Int64(parse) | FieldParser::Timestamp(parse) => {
-                    build_primitive_array::<Int64Type, Int64Parser>(&rows, i, parse)?
+                    build_primitive_array::<Int64Type, Int64Parser>(&rows, i, parse)
                 }
                 FieldParser::Float64(parse) => {
-                    build_primitive_array::<Float64Type, Float64Parser>(&rows, i, parse)?
+                    build_primitive_array::<Float64Type, Float64Parser>(&rows, i, parse)
                 }
                 FieldParser::Utf8 => {
-                    let mut builder = StringBuilder::with_capacity(rows.len())?;
+                    let mut builder = StringBuilder::new(rows.len());
                     for row in &rows {
-                        builder.try_push(std::str::from_utf8(row.get(i).unwrap_or_default())?)?;
+                        builder.append_value(
+                            std::str::from_utf8(row.get(i).unwrap_or_default())
+                                .map_err(|e| ArrowError::ParseError(e.to_string()))?,
+                        )?;
                     }
-                    builder.build()
+                    Arc::new(builder.finish())
                 }
                 FieldParser::Binary => {
-                    let mut builder = BinaryBuilder::with_capacity(rows.len())?;
+                    let mut builder = BinaryBuilder::new(rows.len());
                     for row in &rows {
-                        builder.try_push(row.get(i).unwrap_or_default())?;
+                        builder.append_value(row.get(i).unwrap_or_default())?;
                     }
-                    builder.build()
+                    Arc::new(builder.finish())
                 }
                 FieldParser::UInt32(parse) => {
-                    build_primitive_array::<UInt32Type, UInt32Parser>(&rows, i, parse)?
+                    build_primitive_array::<UInt32Type, UInt32Parser>(&rows, i, parse)
                 }
                 FieldParser::Dict => {
-                    let mut builder = PrimitiveBuilder::<UInt32Type>::with_capacity(rows.len())?;
+                    let mut builder = PrimitiveBuilder::<UInt32Type>::new(rows.len());
                     for r in &rows {
-                        let key = std::str::from_utf8(r.get(i).unwrap_or_default())?;
+                        let key = std::str::from_utf8(r.get(i).unwrap_or_default())
+                            .map_err(|e| ArrowError::ParseError(e.to_string()))?;
                         let value = self.labels.get(&i).map_or_else(u32::max_value, |map| {
                             let mut entry = map.entry(key.to_string()).or_insert_with(|| {
                                 self.enum_max_values.get(&i).map_or(
@@ -380,9 +384,9 @@ where
                             *entry.value_mut() = (entry.value().0, entry.value().1 + 1);
                             entry.value().0
                         });
-                        builder.try_push(value)?;
+                        builder.append_value(value)?;
                     }
-                    builder.build()
+                    Arc::new(builder.finish())
                 }
             };
             arrays.push(col);
@@ -394,25 +398,19 @@ where
         let arrays = self
             .parsers
             .iter()
-            .map(|parser| match parser {
-                FieldParser::Int64(_) | FieldParser::Timestamp(_) => {
-                    PrimitiveBuilder::<Int64Type>::with_capacity(0)
-                        .expect("fail to build empty array")
-                        .build()
-                }
-                FieldParser::Float64(_) => PrimitiveBuilder::<Float64Type>::with_capacity(0)
-                    .expect("fail to build empty array")
-                    .build(),
-                FieldParser::Utf8 => StringBuilder::with_capacity(0)
-                    .expect("fail to build empty array")
-                    .build(),
-                FieldParser::Binary => BinaryBuilder::with_capacity(0)
-                    .expect("fail to build empty array")
-                    .build(),
-                FieldParser::UInt32(_) | FieldParser::Dict => {
-                    PrimitiveBuilder::<UInt32Type>::with_capacity(0)
-                        .expect("fail to build empty array")
-                        .build()
+            .map(|parser| -> Arc<dyn Array> {
+                match parser {
+                    FieldParser::Int64(_) | FieldParser::Timestamp(_) => {
+                        Arc::new(PrimitiveBuilder::<Int64Type>::new(0).finish())
+                    }
+                    FieldParser::Float64(_) => {
+                        Arc::new(PrimitiveBuilder::<Float64Type>::new(0).finish())
+                    }
+                    FieldParser::Utf8 => Arc::new(StringBuilder::new(0).finish()),
+                    FieldParser::Binary => Arc::new(BinaryBuilder::new(0).finish()),
+                    FieldParser::UInt32(_) | FieldParser::Dict => {
+                        Arc::new(PrimitiveBuilder::<UInt32Type>::new(0).finish())
+                    }
                 }
             })
             .collect();
@@ -420,27 +418,25 @@ where
     }
 }
 
-fn build_primitive_array<T, P>(
-    rows: &[Record],
-    col_idx: usize,
-    parse: &Arc<P>,
-) -> Result<Arc<dyn Array>, AllocationError>
+fn build_primitive_array<T, P>(rows: &[Record], col_idx: usize, parse: &Arc<P>) -> Arc<dyn Array>
 where
-    T: PrimitiveType,
+    T: ArrowPrimitiveType,
     T::Native: Default,
     P: Fn(&[u8]) -> Result<T::Native, ParseError> + Send + Sync + ?Sized,
 {
-    let mut builder = PrimitiveBuilder::<T>::with_capacity(rows.len())?;
+    let mut builder = PrimitiveBuilder::<T>::new(rows.len());
     for row in rows {
         match row.get(col_idx) {
             Some(s) if !s.is_empty() => {
                 let t = parse(s).unwrap_or_default();
-                builder.try_push(t)?;
+                builder.append_value(t).expect("never fails")
             }
-            _ => builder.try_push(T::Native::default())?,
+            _ => builder
+                .append_value(T::Native::default())
+                .expect("never fails"),
         }
     }
-    Ok(builder.build())
+    Arc::new(builder.finish())
 }
 
 /// Infers the data type of a field in a CSV record.
@@ -471,7 +467,7 @@ pub fn infer_schema<R: Read>(reader: &mut BufReader<R>) -> Result<Schema, String
         let data_type = record
             .get(i)
             .map_or(DataType::Utf8, |f| infer_field_type(f));
-        fields.push(Field::new(data_type));
+        fields.push(Field::new("", data_type, false));
     }
     Ok(Schema::new(fields))
 }
@@ -479,13 +475,12 @@ pub fn infer_schema<R: Read>(reader: &mut BufReader<R>) -> Result<Schema, String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::array::{Array, BinaryArray, StringArray};
     use crate::table::Column;
+    use arrow::array::{Array, BinaryArray, StringArray};
     use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
     use num_traits::ToPrimitive;
     use std::collections::HashMap;
-    use std::convert::TryFrom;
     use std::net::Ipv4Addr;
 
     fn convert_to_conc_enum_maps(
@@ -577,7 +572,7 @@ mod tests {
         labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
 
         let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
-        let c1_a: Arc<dyn Array> = Arc::new(StringArray::try_from(c1_v.as_slice()).unwrap());
+        let c1_a: Arc<dyn Array> = Arc::new(StringArray::from(c1_v));
         let c1 = Column::from(c1_a);
         let c2 = Column::try_from_slice::<UInt32Type>(
             c2_v.iter()
@@ -595,7 +590,7 @@ mod tests {
         )
         .unwrap();
         let c5 = Column::try_from_slice::<UInt32Type>(&c5_v).unwrap();
-        let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::try_from(c6_v.as_slice()).unwrap());
+        let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::from(c6_v));
         let c6 = Column::from(c6_a);
         let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
         (data, labels, columns)
@@ -607,10 +602,10 @@ mod tests {
         let mut input = BufReader::new(buf);
         let schema = infer_schema(&mut input).unwrap();
         let answers = vec![
-            Field::new(DataType::Utf8),
-            Field::new(DataType::Int64),
-            Field::new(DataType::Float64),
-            Field::new(DataType::Utf8),
+            Field::new("", DataType::Utf8, false),
+            Field::new("", DataType::Int64, false),
+            Field::new("", DataType::Float64, false),
+            Field::new("", DataType::Utf8, false),
         ];
 
         assert!(schema

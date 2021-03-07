@@ -8,11 +8,11 @@ Data structures to handle large, structured data.
 
 ## Minimum Supported Rust Version
 
-This crate is guaranteed to compile on Rust 1.42 and later.
+This crate is guaranteed to compile on Rust 1.46 and later.
 
 ## License
 
-Copyright 2019-2020 Petabi, Inc.
+Copyright 2019-2021 Petabi, Inc.
 
 Licensed under [Apache License, Version 2.0][apache-license] (the "License");
 you may not use this crate except in compliance with the License.

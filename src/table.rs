@@ -1,18 +1,15 @@
-use crate::array::{primitive, Array, BinaryArray, Builder, StringArray};
-use crate::datatypes::{
-    Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, PrimitiveType, TimeUnit,
-    UInt16Type, UInt32Type, UInt64Type, UInt8Type,
+use arrow::array::{
+    Array, BinaryArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
+    PrimitiveArray, PrimitiveBuilder, StringArray, UInt16Array, UInt32Array, UInt64Array,
+    UInt8Array,
 };
-use crate::memory::AllocationError;
-use crate::{DataType, Schema};
+use arrow::datatypes::{ArrowPrimitiveType, DataType, Int64Type, Schema, TimeUnit, UInt32Type};
 use dashmap::DashMap;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
 use std::iter::{Flatten, Iterator};
 use std::marker::PhantomData;
-use std::ops::Index;
 use std::slice;
 use std::sync::Arc;
 use std::vec;
@@ -47,7 +44,7 @@ impl Into<DataType> for ColumnType {
         match self {
             Self::Int64 => DataType::Int64,
             Self::Float64 => DataType::Float64,
-            Self::DateTime => DataType::Timestamp(TimeUnit::Second),
+            Self::DateTime => DataType::Timestamp(TimeUnit::Second, None),
             Self::Enum | Self::IpAddr => DataType::UInt32,
             Self::Utf8 => DataType::Utf8,
             Self::Binary => DataType::Binary,
@@ -56,7 +53,7 @@ impl Into<DataType> for ColumnType {
 }
 
 /// Structured data represented in a column-oriented form.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Table {
     schema: Arc<Schema>,
     columns: Vec<Column>,
@@ -252,9 +249,9 @@ impl Table {
                     }
                 } else if let ColumnType::Int64 = column_types[count_index] {
                     let counts = column
-                        .view_iter::<Int64ArrayType, i64>(rows)
+                        .primitive_iter::<Int64Type>(rows)
                         .unwrap()
-                        .map(|v: &i64| v.to_usize().unwrap_or(0)) // if count is negative, then 0
+                        .map(|v| v.to_usize().unwrap_or(0)) // if count is negative, then 0
                         .collect::<Vec<_>>();
 
                     for (index, r) in rows_interval.iter().enumerate() {
@@ -349,30 +346,25 @@ impl Table {
             );
 
             let mapped_enums = map_vector.iter().map(|v| v.1).collect();
-            self.limit_enum_values(*column_index, &mapped_enums)
-                .unwrap();
+            self.limit_enum_values(*column_index, &mapped_enums);
         }
         (enum_portion_dimensions, enum_set_dimensions)
     }
 
-    fn limit_enum_values(
-        &mut self,
-        column_index: usize,
-        mapped_enums: &HashSet<u32>,
-    ) -> Result<(), AllocationError> {
+    fn limit_enum_values(&mut self, column_index: usize, mapped_enums: &HashSet<u32>) {
         let col = &mut self.columns[column_index];
-        let mut builder = primitive::Builder::<UInt32Type>::with_capacity(col.len())?;
-        for val in col.iter::<UInt32ArrayType>().unwrap() {
-            let new_val = if mapped_enums.contains(val) {
-                *val
+        let mut builder = PrimitiveBuilder::<UInt32Type>::new(col.len());
+        for val in col.iter::<UInt32Array>().unwrap() {
+            let val = val.expect("not null");
+            let new_val = if mapped_enums.contains(&val) {
+                val
             } else {
                 0_u32 // if unmapped out of the predefined rate, enum value set to 0_u32.
             };
-            builder.try_push(new_val)?;
+            builder.append_value(new_val).expect("never fails");
         }
         col.arrays.clear();
-        col.arrays.push(builder.build());
-        Ok(())
+        col.arrays.push(Arc::new(builder.finish()));
     }
 }
 
@@ -389,12 +381,16 @@ impl Column {
     ///
     /// # Errors
     ///
-    /// Returns an error if memory allocation failed.
-    pub fn try_from_slice<T>(slice: &[T::Native]) -> Result<Self, AllocationError>
+    /// Returns an error if array operation failed.
+    pub fn try_from_slice<T>(slice: &[T::Native]) -> arrow::error::Result<Self>
     where
-        T: PrimitiveType,
+        T: ArrowPrimitiveType,
     {
-        let array: Arc<dyn Array> = Arc::new(TryInto::<primitive::Array<T>>::try_into(slice)?);
+        let mut builder = PrimitiveBuilder::<T>::new(slice.len());
+        for s in slice {
+            builder.append_value(*s)?;
+        }
+        let array: Arc<dyn Array> = Arc::new(builder.finish());
         Ok(array.into())
     }
 
@@ -402,11 +398,9 @@ impl Column {
         self.len
     }
 
-    fn try_get<'a, A, T>(&self, index: usize) -> Result<Option<&T>, TypeError>
+    fn primitive_try_get<T>(&self, index: usize) -> Result<Option<T::Native>, TypeError>
     where
-        A: ArrayType<Elem = &'a T>,
-        A::Array: Index<usize, Output = T> + 'static,
-        T: ?Sized + 'static,
+        T: ArrowPrimitiveType,
     {
         if index >= self.len() {
             return Ok(None);
@@ -415,13 +409,53 @@ impl Column {
             Ok(i) => (i, 0),
             Err(i) => (i - 1, index - self.cumlen[i - 1]),
         };
-        let typed_arr =
-            if let Some(arr) = self.arrays[array_index].as_any().downcast_ref::<A::Array>() {
-                arr
-            } else {
-                return Err(TypeError());
-            };
-        Ok(Some(typed_arr.index(inner_index)))
+        let typed_arr = if let Some(arr) = self.arrays[array_index]
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+        {
+            arr
+        } else {
+            return Err(TypeError());
+        };
+        Ok(Some(typed_arr.value(inner_index)))
+    }
+
+    fn binary_try_get(&self, index: usize) -> Result<Option<&[u8]>, TypeError> {
+        if index >= self.len() {
+            return Ok(None);
+        }
+        let (array_index, inner_index) = match self.cumlen.binary_search(&index) {
+            Ok(i) => (i, 0),
+            Err(i) => (i - 1, index - self.cumlen[i - 1]),
+        };
+        let typed_arr = if let Some(arr) = self.arrays[array_index]
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+        {
+            arr
+        } else {
+            return Err(TypeError());
+        };
+        Ok(Some(typed_arr.value(inner_index)))
+    }
+
+    fn string_try_get(&self, index: usize) -> Result<Option<&str>, TypeError> {
+        if index >= self.len() {
+            return Ok(None);
+        }
+        let (array_index, inner_index) = match self.cumlen.binary_search(&index) {
+            Ok(i) => (i, 0),
+            Err(i) => (i - 1, index - self.cumlen[i - 1]),
+        };
+        let typed_arr = if let Some(arr) = self.arrays[array_index]
+            .as_any()
+            .downcast_ref::<StringArray>()
+        {
+            arr
+        } else {
+            return Err(TypeError());
+        };
+        Ok(Some(typed_arr.value(inner_index)))
     }
 
     fn append(&mut self, other: &mut Self) {
@@ -440,15 +474,14 @@ impl Column {
     ///
     /// Returns an error if the type parameter does not match with the type of
     /// this `Column`.
-    pub fn iter<'a, T>(&'a self) -> Result<Flatten<vec::IntoIter<&'a T::Array>>, TypeError>
+    pub fn iter<'a, T>(&'a self) -> Result<Flatten<vec::IntoIter<&'a T>>, TypeError>
     where
-        T: ArrayType,
-        T::Array: 'static,
-        &'a T::Array: IntoIterator,
+        T: Array + 'static,
+        &'a T: IntoIterator,
     {
-        let mut arrays: Vec<&T::Array> = Vec::with_capacity(self.arrays.len());
+        let mut arrays: Vec<&T> = Vec::with_capacity(self.arrays.len());
         for arr in &self.arrays {
-            let typed_arr = if let Some(arr) = arr.as_any().downcast_ref::<T::Array>() {
+            let typed_arr = if let Some(arr) = arr.as_any().downcast_ref::<T>() {
                 arr
             } else {
                 return Err(TypeError());
@@ -459,31 +492,48 @@ impl Column {
     }
 
     /// Creates an iterator iterating over a subset of the cells in this
-    /// `Column`, designated by `selected`.
+    /// `Column` of primitive type, designated by `selected`.
     ///
     /// # Errors
     ///
     /// Returns an error if the type parameter does not match with the type of
     /// this `Column`.
-    pub fn view_iter<'a, 'b, A, T>(
+    pub fn primitive_iter<'a, 'b, T>(
         &'a self,
         selected: &'b [usize],
-    ) -> Result<ViewIter<'a, 'b, A, T>, TypeError>
+    ) -> Result<PrimitiveIter<'a, 'b, T>, TypeError>
     where
-        A: ArrayType<Elem = &'a T>,
-        A::Array: Index<usize, Output = T> + 'static,
-        T: ?Sized + 'static,
+        T: ArrowPrimitiveType,
     {
-        let mut arrays: Vec<&A::Array> = Vec::with_capacity(self.arrays.len());
-        for arr in &self.arrays {
-            let typed_arr = if let Some(arr) = arr.as_any().downcast_ref::<A::Array>() {
-                arr
-            } else {
-                return Err(TypeError());
-            };
-            arrays.push(typed_arr);
-        }
-        Ok(ViewIter::new(self, selected.iter()))
+        Ok(PrimitiveIter::new(self, selected.iter()))
+    }
+
+    /// Creates an iterator iterating over a subset of the cells in this
+    /// `Column` of binaries, designated by `selected`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the type parameter does not match with the type of
+    /// this `Column`.
+    pub fn binary_iter<'a, 'b>(
+        &'a self,
+        selected: &'b [usize],
+    ) -> Result<BinaryIter<'a, 'b>, TypeError> {
+        Ok(BinaryIter::new(self, selected.iter()))
+    }
+
+    /// Creates an iterator iterating over a subset of the cells in this
+    /// `Column` of strings, designated by `selected`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the type parameter does not match with the type of
+    /// this `Column`.
+    pub fn string_iter<'a, 'b>(
+        &'a self,
+        selected: &'b [usize],
+    ) -> Result<StringIter<'a, 'b>, TypeError> {
+        Ok(StringIter::new(self, selected.iter()))
     }
 }
 
@@ -493,7 +543,7 @@ impl PartialEq for Column {
         let data_type = match (self.arrays.first(), other.arrays.first()) {
             (Some(x_arr), Some(y_arr)) => {
                 if x_arr.data().data_type() == y_arr.data().data_type() {
-                    x_arr.data().data_type()
+                    x_arr.data().data_type().clone()
                 } else {
                     return false;
                 }
@@ -507,65 +557,66 @@ impl PartialEq for Column {
 
         match data_type {
             DataType::Int8 => self
-                .iter::<Int8ArrayType>()
+                .iter::<Int8Array>()
                 .expect("invalid array")
-                .zip(other.iter::<Int8ArrayType>().expect("invalid array"))
+                .zip(other.iter::<Int8Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::Int16 => self
-                .iter::<Int16ArrayType>()
+                .iter::<Int16Array>()
                 .expect("invalid array")
-                .zip(other.iter::<Int16ArrayType>().expect("invalid array"))
+                .zip(other.iter::<Int16Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::Int32 => self
-                .iter::<Int32ArrayType>()
+                .iter::<Int32Array>()
                 .expect("invalid array")
-                .zip(other.iter::<Int32ArrayType>().expect("invalid array"))
+                .zip(other.iter::<Int32Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
-            DataType::Int64 | DataType::Timestamp(TimeUnit::Second) => self
-                .iter::<Int64ArrayType>()
+            DataType::Int64 | DataType::Timestamp(_, _) => self
+                .iter::<Int64Array>()
                 .expect("invalid array")
-                .zip(other.iter::<Int64ArrayType>().expect("invalid array"))
+                .zip(other.iter::<Int64Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::UInt8 => self
-                .iter::<UInt8ArrayType>()
+                .iter::<UInt8Array>()
                 .expect("invalid array")
-                .zip(other.iter::<UInt8ArrayType>().expect("invalid array"))
+                .zip(other.iter::<UInt8Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::UInt16 => self
-                .iter::<UInt16ArrayType>()
+                .iter::<UInt16Array>()
                 .expect("invalid array")
-                .zip(other.iter::<UInt16ArrayType>().expect("invalid array"))
+                .zip(other.iter::<UInt16Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::UInt32 => self
-                .iter::<UInt32ArrayType>()
+                .iter::<UInt32Array>()
                 .expect("invalid array")
-                .zip(other.iter::<UInt32ArrayType>().expect("invalid array"))
+                .zip(other.iter::<UInt32Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::UInt64 => self
-                .iter::<UInt64ArrayType>()
+                .iter::<UInt64Array>()
                 .expect("invalid array")
-                .zip(other.iter::<UInt64ArrayType>().expect("invalid array"))
+                .zip(other.iter::<UInt64Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::Float32 => self
-                .iter::<Float32ArrayType>()
+                .iter::<Float32Array>()
                 .expect("invalid array")
-                .zip(other.iter::<Float32ArrayType>().expect("invalid array"))
+                .zip(other.iter::<Float32Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::Float64 => self
-                .iter::<Float64ArrayType>()
+                .iter::<Float64Array>()
                 .expect("invalid array")
-                .zip(other.iter::<Float64ArrayType>().expect("invalid array"))
+                .zip(other.iter::<Float64Array>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::Utf8 => self
-                .iter::<Utf8ArrayType>()
+                .iter::<StringArray>()
                 .expect("invalid array")
-                .zip(other.iter::<Utf8ArrayType>().expect("invalid array"))
+                .zip(other.iter::<StringArray>().expect("invalid array"))
                 .all(|(x, y)| x == y),
             DataType::Binary => self
-                .iter::<BinaryArrayType>()
+                .iter::<BinaryArray>()
                 .expect("invalid array")
-                .zip(other.iter::<BinaryArrayType>().expect("invalid array"))
+                .zip(other.iter::<BinaryArray>().expect("invalid array"))
                 .all(|(x, y)| x == y),
+            _ => unimplemented!(),
         }
     }
 }
@@ -587,131 +638,85 @@ pub trait ArrayType {
     type Elem;
 }
 
-macro_rules! make_array_type {
-    ($(#[$outer:meta])*
-    $name:ident, $array_ty:ty, $elem_ty:ty) => {
-        $(#[$outer])*
-        pub struct $name<'a> {
-            _marker: PhantomData<&'a u8>,
-        }
-
-        impl<'a> ArrayType for $name<'a> {
-            type Array = $array_ty;
-            type Elem = &'a $elem_ty;
-        }
-    };
-}
-
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `i8`s.
-    Int8ArrayType,
-    primitive::Array<Int8Type>,
-    i8
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `i16`s.
-    Int16ArrayType,
-    primitive::Array<Int16Type>,
-    i16
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `i32`s.
-    Int32ArrayType,
-    primitive::Array<Int32Type>,
-    i32
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `i64`s.
-    Int64ArrayType,
-    primitive::Array<Int64Type>,
-    i64
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `u8`s.
-    UInt8ArrayType,
-    primitive::Array<UInt8Type>,
-    u8
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `u16`s.
-    UInt16ArrayType,
-    primitive::Array<UInt16Type>,
-    u8
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `u32`s.
-    UInt32ArrayType,
-    primitive::Array<UInt32Type>,
-    u32
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `u64`s.
-    UInt64ArrayType,
-    primitive::Array<UInt64Type>,
-    u64
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `f64`s.
-    Float32ArrayType,
-    primitive::Array<Float32Type>,
-    f64
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are `f64`s.
-    Float64ArrayType,
-    primitive::Array<Float64Type>,
-    f64
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are UTF-8 strings.
-    Utf8ArrayType,
-    StringArray,
-    str
-);
-make_array_type!(
-    /// Data type of a dynamic array whose elements are byte sequences.
-    BinaryArrayType,
-    BinaryArray,
-    [u8]
-);
-
 #[derive(Debug, PartialEq)]
 pub struct TypeError();
 
-pub struct ViewIter<'a, 'b, A, T: ?Sized> {
+pub struct PrimitiveIter<'a, 'b, T: ArrowPrimitiveType> {
     column: &'a Column,
     selected: slice::Iter<'b, usize>,
-    _a_marker: PhantomData<A>,
     _t_marker: PhantomData<T>,
 }
 
-impl<'a, 'b, A, T> ViewIter<'a, 'b, A, T>
+impl<'a, 'b, T> PrimitiveIter<'a, 'b, T>
 where
-    A: ArrayType<Elem = &'a T>,
-    A::Array: Index<usize, Output = T> + 'static,
-    T: ?Sized + 'static,
+    T: ArrowPrimitiveType,
 {
     fn new(column: &'a Column, selected: slice::Iter<'b, usize>) -> Self {
         Self {
             column,
             selected,
-            _a_marker: PhantomData,
             _t_marker: PhantomData,
         }
     }
 }
 
-impl<'a, 'b, A, T> Iterator for ViewIter<'a, 'b, A, T>
+impl<'a, 'b, T> Iterator for PrimitiveIter<'a, 'b, T>
 where
-    A: ArrayType<Elem = &'a T>,
-    A::Array: Index<usize, Output = T> + 'static,
-    T: ?Sized + 'static,
+    T: ArrowPrimitiveType,
 {
-    type Item = A::Elem;
+    type Item = T::Native;
 
     fn next(&mut self) -> Option<Self::Item> {
         let selected = self.selected.next()?;
-        if let Ok(elem) = self.column.try_get::<A, T>(*selected) {
+        if let Ok(elem) = self.column.primitive_try_get::<T>(*selected) {
+            elem
+        } else {
+            None
+        }
+    }
+}
+
+pub struct BinaryIter<'a, 'b> {
+    column: &'a Column,
+    selected: slice::Iter<'b, usize>,
+}
+
+impl<'a, 'b> BinaryIter<'a, 'b> {
+    fn new(column: &'a Column, selected: slice::Iter<'b, usize>) -> Self {
+        Self { column, selected }
+    }
+}
+
+impl<'a, 'b> Iterator for BinaryIter<'a, 'b> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let selected = self.selected.next()?;
+        if let Ok(elem) = self.column.binary_try_get(*selected) {
+            elem
+        } else {
+            None
+        }
+    }
+}
+
+pub struct StringIter<'a, 'b> {
+    column: &'a Column,
+    selected: slice::Iter<'b, usize>,
+}
+
+impl<'a, 'b> StringIter<'a, 'b> {
+    fn new(column: &'a Column, selected: slice::Iter<'b, usize>) -> Self {
+        Self { column, selected }
+    }
+}
+
+impl<'a, 'b> Iterator for StringIter<'a, 'b> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let selected = self.selected.next()?;
+        if let Ok(elem) = self.column.string_try_get(*selected) {
             elem
         } else {
             None
@@ -722,22 +727,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datatypes::Field;
     use crate::Column;
+    use arrow::datatypes::{Field, Float64Type};
     use chrono::NaiveDate;
-    use std::convert::TryFrom;
     use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
-    fn table_try_default() {
-        let table = Table::default();
-        assert_eq!(table.num_columns(), 0);
-        assert_eq!(table.num_rows(), 0);
-    }
-
-    #[test]
     fn table_new() {
-        let table = Table::new(Arc::new(Schema::default()), Vec::new(), HashMap::new())
+        let table = Table::new(Arc::new(Schema::empty()), Vec::new(), HashMap::new())
             .expect("creating an empty `Table` should not fail");
         assert_eq!(table.num_columns(), 0);
         assert_eq!(table.num_rows(), 0);
@@ -747,11 +744,11 @@ mod tests {
     fn column_new() {
         let column = Column::default();
         assert_eq!(column.len(), 0);
-        assert_eq!(column.try_get::<UInt32ArrayType, u32>(0), Ok(None));
+        assert_eq!(column.primitive_try_get::<UInt32Type>(0), Ok(None));
 
         let column = Column::default();
         assert_eq!(column.len(), 0);
-        assert_eq!(column.try_get::<Utf8ArrayType, str>(0), Ok(None));
+        assert_eq!(column.string_try_get(0), Ok(None));
     }
 
     fn reverse_enum_maps(
@@ -784,9 +781,9 @@ mod tests {
     #[test]
     fn count_group_by_test() {
         let schema = Schema::new(vec![
-            Field::new(DataType::Timestamp(TimeUnit::Second)),
-            Field::new(DataType::Int64),
-            Field::new(DataType::Int64),
+            Field::new("", DataType::Timestamp(TimeUnit::Second, None), false),
+            Field::new("", DataType::Int64, false),
+            Field::new("", DataType::Int64, false),
         ]);
         let c0_v: Vec<i64> = vec![
             NaiveDate::from_ymd(2020, 1, 1)
@@ -839,13 +836,13 @@ mod tests {
     #[test]
     fn description_test() {
         let schema = Schema::new(vec![
-            Field::new(DataType::Int64),
-            Field::new(DataType::Utf8),
-            Field::new(DataType::UInt32),
-            Field::new(DataType::Float64),
-            Field::new(DataType::Timestamp(TimeUnit::Second)),
-            Field::new(DataType::UInt32),
-            Field::new(DataType::Binary),
+            Field::new("", DataType::Int64, false),
+            Field::new("", DataType::Utf8, false),
+            Field::new("", DataType::UInt32, false),
+            Field::new("", DataType::Float64, false),
+            Field::new("", DataType::Timestamp(TimeUnit::Second, None), false),
+            Field::new("", DataType::UInt32, false),
+            Field::new("", DataType::Binary, false),
         ]);
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
         let c1_v: Vec<_> = vec!["111a qwer", "b", "c", "d", "b", "111a qwer", "111a qwer"];
@@ -894,13 +891,13 @@ mod tests {
         ];
 
         let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
-        let c1_a: Arc<dyn Array> = Arc::new(StringArray::try_from(c1_v.as_slice()).unwrap());
+        let c1_a: Arc<dyn Array> = Arc::new(StringArray::from(c1_v));
         let c1 = Column::from(c1_a);
         let c2 = Column::try_from_slice::<UInt32Type>(&c2_v).unwrap();
         let c3 = Column::try_from_slice::<Float64Type>(&c3_v).unwrap();
         let c4 = Column::try_from_slice::<Int64Type>(&c4_v).unwrap();
         let c5 = Column::try_from_slice::<UInt32Type>(&c5_v).unwrap();
-        let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::try_from(c6_v.as_slice()).unwrap());
+        let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::from(c6_v));
         let c6 = Column::from(c6_a);
         let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
         let table = Table::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
