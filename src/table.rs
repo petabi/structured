@@ -38,16 +38,16 @@ pub enum ColumnType {
     Binary,
 }
 
-impl Into<DataType> for ColumnType {
+impl From<ColumnType> for DataType {
     #[must_use]
-    fn into(self) -> DataType {
-        match self {
-            Self::Int64 => DataType::Int64,
-            Self::Float64 => DataType::Float64,
-            Self::DateTime => DataType::Timestamp(TimeUnit::Second, None),
-            Self::Enum | Self::IpAddr => DataType::UInt32,
-            Self::Utf8 => DataType::Utf8,
-            Self::Binary => DataType::Binary,
+    fn from(ct: ColumnType) -> Self {
+        match ct {
+            ColumnType::Int64 => Self::Int64,
+            ColumnType::Float64 => Self::Float64,
+            ColumnType::DateTime => Self::Timestamp(TimeUnit::Second, None),
+            ColumnType::Enum | ColumnType::IpAddr => Self::UInt32,
+            ColumnType::Utf8 => Self::Utf8,
+            ColumnType::Binary => Self::Binary,
         }
     }
 }
