@@ -250,7 +250,7 @@ impl Table {
                 } else if let ColumnType::Int64 = column_types[count_index] {
                     let counts = column
                         .primitive_iter::<Int64Type>(rows)
-                        .unwrap()
+                        .expect("expecting Int64Type only")
                         .map(|v| v.to_usize().unwrap_or(0)) // if count is negative, then 0
                         .collect::<Vec<_>>();
 
