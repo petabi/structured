@@ -8,4 +8,4 @@ pub use stats::{
     ColumnStatistics, Description, Element, ElementCount, FloatRange, GroupCount, GroupElement,
     GroupElementCount, NLargestCount,
 };
-pub use table::{Column, ColumnType, Table};
+pub use table::{Column, ColumnType, ConcurrentReverseEnumMaps, ReverseEnumMaps, Table};

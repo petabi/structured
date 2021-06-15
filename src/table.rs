@@ -20,8 +20,8 @@ use crate::stats::{
     GroupElement, GroupElementCount, NLargestCount,
 };
 
-type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
-
+pub type ConcurrentReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
+pub type ReverseEnumMaps = HashMap<usize, Arc<HashMap<u32, Vec<String>>>>;
 /// The data type of a table column.
 #[derive(Clone, Copy, Debug, Deserialize, EnumString, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
