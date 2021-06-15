@@ -9,7 +9,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Requires Rust 1.51 or later.
+- Requires Rust 1.52 or later.
 - No longer supports dimension limitation for `Enum` in `CSV`.
 
 ## [0.4.0] - 2021-03-07
