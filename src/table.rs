@@ -3,11 +3,10 @@ use arrow::array::{
     PrimitiveArray, PrimitiveBuilder, StringArray, UInt16Array, UInt32Array, UInt64Array,
     UInt8Array,
 };
-use arrow::datatypes::{ArrowPrimitiveType, DataType, Int64Type, Schema, TimeUnit, UInt32Type};
-use dashmap::DashMap;
+use arrow::datatypes::{ArrowPrimitiveType, DataType, Int64Type, Schema, TimeUnit};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::iter::{Flatten, Iterator};
 use std::marker::PhantomData;
 use std::slice;
@@ -21,7 +20,6 @@ use crate::stats::{
     GroupElement, GroupElementCount, NLargestCount,
 };
 
-type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, (u32, usize)>>>>;
 type ReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
 
 /// The data type of a table column.
@@ -291,80 +289,6 @@ impl Table {
     #[must_use]
     pub fn get_index_of_event(&self, eventid: u64) -> Option<&usize> {
         self.event_ids.get(&eventid)
-    }
-
-    pub fn limit_dimension(
-        &mut self,
-        enum_dimensions: &HashMap<usize, u32>,
-        enum_maps: &ConcurrentEnumMaps,
-        max_dimension: u32,
-        max_enum_portion: f64,
-    ) -> (HashMap<usize, u32>, HashMap<usize, u32>) {
-        let mut enum_portion_dimensions = HashMap::<usize, u32>::new();
-        let mut enum_set_dimensions = HashMap::<usize, u32>::new();
-        for map in enum_maps.iter() {
-            let (column_index, column_map) = (map.key(), map.value());
-            let dimension = (*(enum_dimensions.get(column_index).unwrap_or(&max_dimension)))
-                .to_usize()
-                .expect("safe");
-
-            let mut number_of_events = 0_usize;
-            let mut map_vector: Vec<(String, u32, usize)> = column_map
-                .iter()
-                .map(|m| {
-                    number_of_events += m.value().1;
-                    (m.key().clone(), m.value().0, m.value().1)
-                })
-                .collect();
-            map_vector.sort_unstable_by(|a, b| b.2.cmp(&a.2));
-            let max_of_events = (number_of_events.to_f64().expect("safe") * max_enum_portion)
-                .to_usize()
-                .expect("safe");
-            let mut count_of_events = 0_usize;
-            let mut index = 0_usize;
-            for (i, m) in map_vector.iter().enumerate() {
-                index = i;
-                count_of_events += m.2;
-                if count_of_events > max_of_events {
-                    break;
-                }
-            }
-
-            let truncate_dimension = if index + 1 < dimension - 1 {
-                index + 1
-            } else if dimension > 0 {
-                dimension - 1
-            } else {
-                0
-            };
-            map_vector.truncate(truncate_dimension);
-
-            enum_portion_dimensions.insert(*column_index, (index + 1).to_u32().expect("safe"));
-            enum_set_dimensions.insert(
-                *column_index,
-                (truncate_dimension + 1).to_u32().expect("safe"),
-            );
-
-            let mapped_enums = map_vector.iter().map(|v| v.1).collect();
-            self.limit_enum_values(*column_index, &mapped_enums);
-        }
-        (enum_portion_dimensions, enum_set_dimensions)
-    }
-
-    fn limit_enum_values(&mut self, column_index: usize, mapped_enums: &HashSet<u32>) {
-        let col = &mut self.columns[column_index];
-        let mut builder = PrimitiveBuilder::<UInt32Type>::new(col.len());
-        for val in col.iter::<UInt32Array>().unwrap() {
-            let val = val.expect("not null");
-            let new_val = if mapped_enums.contains(&val) {
-                val
-            } else {
-                0_u32 // if unmapped out of the predefined rate, enum value set to 0_u32.
-            };
-            builder.append_value(new_val).expect("never fails");
-        }
-        col.arrays.clear();
-        col.arrays.push(Arc::new(builder.finish()));
     }
 }
 
@@ -728,7 +652,7 @@ impl<'a, 'b> Iterator for StringIter<'a, 'b> {
 mod tests {
     use super::*;
     use crate::Column;
-    use arrow::datatypes::{Field, Float64Type};
+    use arrow::datatypes::{Field, Float64Type, UInt32Type};
     use chrono::NaiveDate;
     use std::net::{IpAddr, Ipv4Addr};
 
