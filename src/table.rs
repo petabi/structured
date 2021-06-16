@@ -20,8 +20,8 @@ use crate::stats::{
     GroupElement, GroupElementCount, NLargestCount,
 };
 
-pub type ConcurrentReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>>;
-pub type ReverseEnumMaps = HashMap<usize, Arc<HashMap<u32, Vec<String>>>>;
+pub type ConcurrentReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u64, Vec<String>>>>>;
+pub type ReverseEnumMaps = HashMap<usize, Arc<HashMap<u64, Vec<String>>>>;
 /// The data type of a table column.
 #[derive(Clone, Copy, Debug, Deserialize, EnumString, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -43,7 +43,8 @@ impl From<ColumnType> for DataType {
             ColumnType::Int64 => Self::Int64,
             ColumnType::Float64 => Self::Float64,
             ColumnType::DateTime => Self::Timestamp(TimeUnit::Second, None),
-            ColumnType::Enum | ColumnType::IpAddr => Self::UInt32,
+            ColumnType::Enum => Self::UInt64,
+            ColumnType::IpAddr => Self::UInt32,
             ColumnType::Utf8 => Self::Utf8,
             ColumnType::Binary => Self::Binary,
         }
@@ -651,10 +652,19 @@ impl<'a, 'b> Iterator for StringIter<'a, 'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::csv::EnumMaps;
     use crate::Column;
-    use arrow::datatypes::{Field, Float64Type, UInt32Type};
+    use ahash::AHasher;
+    use arrow::datatypes::{Field, Float64Type, UInt32Type, UInt64Type};
     use chrono::NaiveDate;
+    use std::hash::{Hash, Hasher};
     use std::net::{IpAddr, Ipv4Addr};
+
+    fn get_hash(seq: &str) -> u64 {
+        let mut hasher = AHasher::default();
+        seq.hash(&mut hasher);
+        hasher.finish()
+    }
 
     #[test]
     fn table_new() {
@@ -675,9 +685,7 @@ mod tests {
         assert_eq!(column.string_try_get(0), Ok(None));
     }
 
-    fn reverse_enum_maps(
-        enum_maps: &HashMap<usize, HashMap<String, (u32, usize)>>,
-    ) -> Arc<HashMap<usize, Arc<HashMap<u32, Vec<String>>>>> {
+    fn reverse_enum_maps(enum_maps: &EnumMaps) -> ConcurrentReverseEnumMaps {
         Arc::new(
             enum_maps
                 .iter()
@@ -685,16 +693,16 @@ mod tests {
                     if map.is_empty() {
                         None
                     } else {
-                        let mut r_map_column = HashMap::<u32, Vec<String>>::new();
+                        let mut r_map_column = HashMap::<u64, Vec<String>>::new();
                         for (s, e) in map {
-                            if let Some(v) = r_map_column.get_mut(&e.0) {
+                            if let Some(v) = r_map_column.get_mut(&e) {
                                 v.push(s.clone());
                             } else {
-                                r_map_column.insert(e.0, vec![s.clone()]);
+                                r_map_column.insert(*e, vec![s.clone()]);
                             }
                         }
-                        r_map_column.insert(0_u32, vec!["_Over One_".to_string()]); // unmapped ones.
-                        r_map_column.insert(u32::max_value(), vec!["_Err_".to_string()]); // something wrong.
+                        r_map_column.insert(u64::max_value(), vec!["_Over One_".to_string()]); // unmapped ones.
+                        r_map_column.insert(u64::max_value(), vec!["_Err_".to_string()]); // something wrong.
                         Some((*index, Arc::new(r_map_column)))
                     }
                 })
@@ -765,7 +773,7 @@ mod tests {
             Field::new("", DataType::UInt32, false),
             Field::new("", DataType::Float64, false),
             Field::new("", DataType::Timestamp(TimeUnit::Second, None), false),
-            Field::new("", DataType::UInt32, false),
+            Field::new("", DataType::UInt64, false),
             Field::new("", DataType::Binary, false),
         ]);
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
@@ -803,7 +811,9 @@ mod tests {
                 .and_hms(9, 10, 11)
                 .timestamp(),
         ];
-        let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
+        let tester = vec!["t1".to_string(), "t2".to_string(), "t3".to_string()];
+        let sid = tester.iter().map(|s| get_hash(s)).collect::<Vec<_>>();
+        let c5_v: Vec<u64> = vec![sid[0], sid[1], sid[1], sid[1], sid[1], sid[1], sid[2]];
         let c6_v: Vec<&[u8]> = vec![
             b"111a qwer",
             b"b",
@@ -820,7 +830,7 @@ mod tests {
         let c2 = Column::try_from_slice::<UInt32Type>(&c2_v).unwrap();
         let c3 = Column::try_from_slice::<Float64Type>(&c3_v).unwrap();
         let c4 = Column::try_from_slice::<Int64Type>(&c4_v).unwrap();
-        let c5 = Column::try_from_slice::<UInt32Type>(&c5_v).unwrap();
+        let c5 = Column::try_from_slice::<UInt64Type>(&c5_v).unwrap();
         let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::from(c6_v));
         let c6 = Column::from(c6_a);
         let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
@@ -865,12 +875,13 @@ mod tests {
             *stat[6].n_largest_count.get_mode().unwrap()
         );
 
-        let mut c5_map: HashMap<u32, String> = HashMap::new();
-        c5_map.insert(1, "t1".to_string());
-        c5_map.insert(2, "t2".to_string());
-        c5_map.insert(7, "t3".to_string());
+        let c5_map: HashMap<u64, String> = sid
+            .iter()
+            .zip(tester.iter())
+            .map(|(id, s)| (*id, s.to_string()))
+            .collect();
         let mut labels = HashMap::new();
-        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, (k, 0))).collect());
+        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, k)).collect());
         let stat = table.statistics(
             &rows,
             &column_types,

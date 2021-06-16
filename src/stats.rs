@@ -1,4 +1,4 @@
-use arrow::datatypes::{Float64Type, Int64Type, UInt32Type};
+use arrow::datatypes::{Float64Type, Int64Type, UInt32Type, UInt64Type};
 use chrono::NaiveDateTime;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ const MIN_TIME_INTERVAL: u32 = 30; // seconds
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Element {
     Int(i64),
-    UInt(u32),
+    UInt(u64),
     Enum(String), // describe() converts UInt -> Enum using enum maps. Without maps, by to_string().
     Float(f64),
     FloatRange(FloatRange),
@@ -328,12 +328,12 @@ pub(crate) fn n_largest_count(
             );
         }
         ColumnType::Enum => {
-            let iter = column.primitive_iter::<UInt32Type>(rows).unwrap();
+            let iter = column.primitive_iter::<UInt64Type>(rows).unwrap();
             top_n!(
                 iter,
                 rows.len(),
                 n_largest_count,
-                u32,
+                u64,
                 Element::UInt,
                 number_of_top_n
             );
@@ -386,7 +386,7 @@ pub(crate) fn n_largest_count(
 pub(crate) fn n_largest_count_enum(
     column: &Column,
     rows: &[usize],
-    reverse_map: &Arc<HashMap<u32, Vec<String>>>,
+    reverse_map: &Arc<HashMap<u64, Vec<String>>>,
     number_of_top_n: u32,
 ) -> NLargestCount {
     let n_largest_count = n_largest_count(column, rows, ColumnType::Enum, number_of_top_n);
