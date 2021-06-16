@@ -1,14 +1,15 @@
 use crate::record;
+use ahash::AHasher;
 use arrow::array::{Array, BinaryBuilder, PrimitiveBuilder, StringBuilder};
 use arrow::datatypes::{
-    ArrowPrimitiveType, DataType, Field, Float64Type, Int64Type, Schema, UInt32Type,
+    ArrowPrimitiveType, DataType, Field, Float64Type, Int64Type, Schema, UInt32Type, UInt64Type,
 };
 use arrow::error::ArrowError;
 use csv_core::ReadRecordResult;
 use dashmap::DashMap;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read};
 use std::str::{self, FromStr};
 use std::sync::Arc;
@@ -261,8 +262,14 @@ fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
     )
 }
 
-pub type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, u32>>>>;
-pub type EnumMaps = HashMap<usize, HashMap<String, u32>>;
+pub type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, u64>>>>;
+pub type EnumMaps = HashMap<usize, HashMap<String, u64>>;
+
+fn get_hash(sequence: &str) -> u64 {
+    let mut hasher = AHasher::default();
+    sequence.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// CSV reader
 pub struct Reader<'a, I>
@@ -348,12 +355,12 @@ where
                     build_primitive_array::<UInt32Type, UInt32Parser>(&rows, i, parse)
                 }
                 FieldParser::Dict => {
-                    let mut builder = PrimitiveBuilder::<UInt32Type>::new(rows.len());
+                    let mut builder = PrimitiveBuilder::<UInt64Type>::new(rows.len());
                     for r in &rows {
                         let key = std::str::from_utf8(r.get(i).unwrap_or_default())
                             .map_err(|e| ArrowError::ParseError(e.to_string()))?;
-                        let value = self.labels.get(&i).map_or_else(u32::max_value, |map| {
-                            let id = u32::try_from(map.len() + 1).expect("overflow");
+                        let id = get_hash(&key);
+                        let value = self.labels.get(&i).map_or_else(u64::max_value, |map| {
                             let entry = map.entry(key.to_string()).or_insert(id);
                             *entry.value()
                         });
@@ -459,7 +466,7 @@ mod tests {
         let c_enum_maps = Arc::new(DashMap::new());
 
         for (column, map) in enum_maps {
-            let c_map = Arc::new(DashMap::<String, u32>::new());
+            let c_map = Arc::new(DashMap::<String, u64>::new());
             for (data, enum_val) in map {
                 c_map.insert(data.clone(), *enum_val);
             }
@@ -490,7 +497,9 @@ mod tests {
             NaiveDate::from_ymd(2019, 9, 21).and_hms(8, 10, 11),
             NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
         ];
-        let c5_v: Vec<u32> = vec![1, 2, 2, 2, 2, 2, 7];
+
+        let sid = vec![get_hash("t1"), get_hash("t2"), get_hash("t3")];
+        let c5_v: Vec<u64> = vec![sid[0], sid[1], sid[1], sid[1], sid[1], sid[1], sid[2]];
         let c6_v: Vec<&[u8]> = vec![
             b"111a qwer",
             b"b",
@@ -501,10 +510,11 @@ mod tests {
             b"111a qwer",
         ];
 
-        let mut c5_map: HashMap<u32, String> = HashMap::new();
-        c5_map.insert(1, "t1".to_string());
-        c5_map.insert(2, "t2".to_string());
-        c5_map.insert(7, "t3".to_string());
+        let mut c5_map: HashMap<u64, String> = HashMap::new();
+
+        c5_map.insert(sid[0], "t1".to_string());
+        c5_map.insert(sid[1], "t2".to_string());
+        c5_map.insert(sid[2], "t3".to_string());
 
         let mut data = vec![];
         let fmt = "%Y-%m-%d %H:%M:%S";
@@ -555,7 +565,7 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        let c5 = Column::try_from_slice::<UInt32Type>(&c5_v).unwrap();
+        let c5 = Column::try_from_slice::<UInt64Type>(&c5_v).unwrap();
         let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::from(c6_v));
         let c6 = Column::from(c6_a);
         let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
@@ -630,7 +640,7 @@ mod tests {
             Vec::new()
         };
 
-        let c = Column::try_from_slice::<UInt32Type>(&[u32::max_value()][0..1]).unwrap();
+        let c = Column::try_from_slice::<UInt64Type>(&[u64::max_value()][0..1]).unwrap();
         assert_eq!(c, result[0]);
     }
 }
