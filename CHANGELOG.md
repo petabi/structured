@@ -12,7 +12,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Requires Rust 1.52 or later.
 - No longer supports dimension limitation for `Enum` in `CSV`.
 - `Enum` field is converted into hash value of `u64`.
-- Add `EnumMaps`, `ConcurrentReverseEnumMaps`, `ReverseEnumMaps` for user.
+- Add `EnumMaps`, `ReverseEnumMaps` for user.
 
 ## [0.4.0] - 2021-03-07
 

@@ -20,8 +20,7 @@ use crate::stats::{
     GroupElement, GroupElementCount, NLargestCount,
 };
 
-pub type ConcurrentReverseEnumMaps = Arc<HashMap<usize, Arc<HashMap<u64, Vec<String>>>>>;
-pub type ReverseEnumMaps = HashMap<usize, Arc<HashMap<u64, Vec<String>>>>;
+pub type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
 /// The data type of a table column.
 #[derive(Clone, Copy, Debug, Deserialize, EnumString, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -143,7 +142,7 @@ impl Table {
                     n_largest_count_enum(
                         column,
                         rows,
-                        r_enum_maps.get(&index).unwrap_or(&Arc::new(HashMap::new())),
+                        r_enum_maps.get(&index).unwrap_or(&HashMap::new()),
                         *numbers_of_top_n
                             .get(index)
                             .expect("top N number for each column should exist."),
@@ -652,7 +651,6 @@ impl<'a, 'b> Iterator for StringIter<'a, 'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::csv::EnumMaps;
     use crate::Column;
     use ahash::AHasher;
     use arrow::datatypes::{Field, Float64Type, UInt32Type, UInt64Type};
@@ -683,31 +681,6 @@ mod tests {
         let column = Column::default();
         assert_eq!(column.len(), 0);
         assert_eq!(column.string_try_get(0), Ok(None));
-    }
-
-    fn reverse_enum_maps(enum_maps: &EnumMaps) -> ConcurrentReverseEnumMaps {
-        Arc::new(
-            enum_maps
-                .iter()
-                .filter_map(|(index, map)| {
-                    if map.is_empty() {
-                        None
-                    } else {
-                        let mut r_map_column = HashMap::<u64, Vec<String>>::new();
-                        for (s, e) in map {
-                            if let Some(v) = r_map_column.get_mut(&e) {
-                                v.push(s.clone());
-                            } else {
-                                r_map_column.insert(*e, vec![s.clone()]);
-                            }
-                        }
-                        r_map_column.insert(u64::max_value(), vec!["_Over One_".to_string()]); // unmapped ones.
-                        r_map_column.insert(u64::max_value(), vec!["_Err_".to_string()]); // something wrong.
-                        Some((*index, Arc::new(r_map_column)))
-                    }
-                })
-                .collect(),
-        )
     }
 
     #[test]
@@ -850,7 +823,7 @@ mod tests {
         let stat = table.statistics(
             &rows,
             &column_types,
-            &reverse_enum_maps(&HashMap::new()),
+            &HashMap::new(),
             &time_intervals,
             &numbers_of_top_n,
         );
@@ -875,17 +848,19 @@ mod tests {
             *stat[6].n_largest_count.get_mode().unwrap()
         );
 
-        let c5_map: HashMap<u64, String> = sid
-            .iter()
-            .zip(tester.iter())
-            .map(|(id, s)| (*id, s.to_string()))
-            .collect();
-        let mut labels = HashMap::new();
-        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, k)).collect());
+        let c5_r_map: ReverseEnumMaps = vec![(
+            5,
+            sid.iter()
+                .zip(tester.iter())
+                .map(|(id, s)| (*id, vec![s.to_string()]))
+                .collect(),
+        )]
+        .into_iter()
+        .collect();
         let stat = table.statistics(
             &rows,
             &column_types,
-            &reverse_enum_maps(&labels),
+            &c5_r_map,
             &time_intervals,
             &numbers_of_top_n,
         );
