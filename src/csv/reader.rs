@@ -6,7 +6,6 @@ use arrow::datatypes::{
 };
 use arrow::error::ArrowError;
 use csv_core::ReadRecordResult;
-use dashmap::DashMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -262,7 +261,6 @@ fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
     )
 }
 
-pub type ConcurrentEnumMaps = Arc<DashMap<usize, Arc<DashMap<String, u64>>>>;
 pub type EnumMaps = HashMap<usize, HashMap<String, u64>>;
 
 fn get_hash(sequence: &str) -> u64 {
@@ -279,7 +277,7 @@ where
     record_iter: I,
     batch_size: usize,
     parsers: &'a [FieldParser],
-    labels: &'a ConcurrentEnumMaps,
+    labels: EnumMaps,
 }
 
 impl<'a, I> Reader<'a, I>
@@ -287,17 +285,12 @@ where
     I: Iterator<Item = &'a [u8]>,
 {
     /// Creates a `Reader` from a byte-sequence iterator.
-    pub fn new(
-        record_iter: I,
-        batch_size: usize,
-        parsers: &'a [FieldParser],
-        labels: &'a ConcurrentEnumMaps,
-    ) -> Self {
+    pub fn new(record_iter: I, batch_size: usize, parsers: &'a [FieldParser]) -> Self {
         Reader {
             record_iter,
             batch_size,
             parsers,
-            labels,
+            labels: HashMap::new(),
         }
     }
 
@@ -360,11 +353,10 @@ where
                         let key = std::str::from_utf8(r.get(i).unwrap_or_default())
                             .map_err(|e| ArrowError::ParseError(e.to_string()))?;
                         let id = get_hash(&key);
-                        let value = self.labels.get(&i).map_or_else(u64::max_value, |map| {
-                            let entry = map.entry(key.to_string()).or_insert(id);
-                            *entry.value()
-                        });
-                        builder.append_value(value)?;
+
+                        let map = self.labels.entry(i).or_insert_with(HashMap::new);
+                        map.entry(key.to_string()).or_insert(id);
+                        builder.append_value(id)?;
                     }
                     Arc::new(builder.finish())
                 }
@@ -388,13 +380,22 @@ where
                     }
                     FieldParser::Utf8 => Arc::new(StringBuilder::new(0).finish()),
                     FieldParser::Binary => Arc::new(BinaryBuilder::new(0).finish()),
-                    FieldParser::UInt32(_) | FieldParser::Dict => {
+                    FieldParser::UInt32(_) => {
                         Arc::new(PrimitiveBuilder::<UInt32Type>::new(0).finish())
                     }
+                    FieldParser::Dict => Arc::new(PrimitiveBuilder::<UInt64Type>::new(0).finish()),
                 }
             })
             .collect();
         record::Batch::new(arrays)
+    }
+
+    pub fn finish(self) -> EnumMaps {
+        self.labels
+    }
+
+    pub fn get_labels(&self) -> EnumMaps {
+        self.labels.clone()
     }
 }
 
@@ -461,19 +462,6 @@ mod tests {
     use itertools::izip;
     use std::collections::HashMap;
     use std::net::Ipv4Addr;
-
-    fn convert_to_conc_enum_maps(enum_maps: &EnumMaps) -> ConcurrentEnumMaps {
-        let c_enum_maps = Arc::new(DashMap::new());
-
-        for (column, map) in enum_maps {
-            let c_map = Arc::new(DashMap::<String, u64>::new());
-            for (data, enum_val) in map {
-                c_map.insert(data.clone(), *enum_val);
-            }
-            c_enum_maps.insert(*column, c_map);
-        }
-        c_enum_maps
-    }
 
     fn get_test_data() -> (Vec<Vec<u8>>, EnumMaps, Vec<Column>) {
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
@@ -608,39 +596,13 @@ mod tests {
             FieldParser::Dict,
             FieldParser::Binary,
         ];
-        let (data, labels, columns) = get_test_data();
-        let c_enum_maps = convert_to_conc_enum_maps(&labels);
-        let mut reader = Reader::new(
-            data.iter().map(|d| d.as_slice()),
-            data.len(),
-            &parsers,
-            &c_enum_maps,
-        );
+        let (data, _, columns) = get_test_data();
+        let mut reader = Reader::new(data.iter().map(|d| d.as_slice()), data.len(), &parsers);
         let result: Vec<Column> = if let Some(batch) = reader.next_batch().unwrap() {
             batch.columns().iter().map(|c| c.clone().into()).collect()
         } else {
             Vec::new()
         };
         assert_eq!(result, columns);
-    }
-
-    #[test]
-    fn missing_enum_map() {
-        let parsers = [FieldParser::Dict];
-        let labels = EnumMaps::new();
-
-        let record = "1\n".to_string().into_bytes();
-        let row = vec![record.as_slice()];
-        let c_enum_maps = convert_to_conc_enum_maps(&labels);
-
-        let mut reader = Reader::new(row.iter().cloned(), row.len(), &parsers, &c_enum_maps);
-        let result: Vec<Column> = if let Some(batch) = reader.next_batch().unwrap() {
-            batch.columns().iter().map(|c| c.clone().into()).collect()
-        } else {
-            Vec::new()
-        };
-
-        let c = Column::try_from_slice::<UInt64Type>(&[u64::max_value()][0..1]).unwrap();
-        assert_eq!(c, result[0]);
     }
 }
