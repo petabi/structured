@@ -393,10 +393,6 @@ where
     pub fn finish(self) -> EnumMaps {
         self.labels
     }
-
-    pub fn get_labels(&self) -> EnumMaps {
-        self.labels.clone()
-    }
 }
 
 fn build_primitive_array<T, P>(rows: &[Record], col_idx: usize, parse: &Arc<P>) -> Arc<dyn Array>

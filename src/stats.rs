@@ -8,7 +8,6 @@ use std::fmt;
 use std::hash::Hash;
 use std::iter::Iterator;
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Arc;
 use std::vec;
 
 use crate::table::{Column, ColumnType};
@@ -386,7 +385,7 @@ pub(crate) fn n_largest_count(
 pub(crate) fn n_largest_count_enum(
     column: &Column,
     rows: &[usize],
-    reverse_map: &Arc<HashMap<u64, Vec<String>>>,
+    reverse_map: &HashMap<u64, Vec<String>>,
     number_of_top_n: u32,
 ) -> NLargestCount {
     let n_largest_count = n_largest_count(column, rows, ColumnType::Enum, number_of_top_n);
