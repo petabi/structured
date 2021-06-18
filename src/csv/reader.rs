@@ -1,14 +1,11 @@
 use crate::record;
-use ahash::AHasher;
 use arrow::array::{Array, BinaryBuilder, PrimitiveBuilder, StringBuilder};
 use arrow::datatypes::{
-    ArrowPrimitiveType, DataType, Field, Float64Type, Int64Type, Schema, UInt32Type, UInt64Type,
+    ArrowPrimitiveType, DataType, Field, Float64Type, Int64Type, Schema, UInt32Type,
 };
 use arrow::error::ArrowError;
 use csv_core::ReadRecordResult;
-use std::collections::HashMap;
 use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read};
 use std::str::{self, FromStr};
 use std::sync::Arc;
@@ -181,9 +178,6 @@ pub enum FieldParser {
 
     /// A timestamp parser converting time into `i64`.
     Timestamp(Arc<Int64Parser>),
-
-    /// A parser for nominal values, storing them using dictionary-encoding.
-    Dict,
 }
 
 impl FieldParser {
@@ -240,7 +234,6 @@ impl<'a> fmt::Debug for FieldParser {
             Self::Utf8 => write!(f, "Utf8"),
             Self::Binary => write!(f, "Binary"),
             Self::Timestamp(_) => write!(f, "Timestamp"),
-            Self::Dict => write!(f, "Dict"),
         }
     }
 }
@@ -261,14 +254,6 @@ fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
     )
 }
 
-pub type EnumMaps = HashMap<usize, HashMap<String, u64>>;
-
-fn get_hash(sequence: &str) -> u64 {
-    let mut hasher = AHasher::default();
-    sequence.hash(&mut hasher);
-    hasher.finish()
-}
-
 /// CSV reader
 pub struct Reader<'a, I>
 where
@@ -277,7 +262,6 @@ where
     record_iter: I,
     batch_size: usize,
     parsers: &'a [FieldParser],
-    labels: EnumMaps,
 }
 
 impl<'a, I> Reader<'a, I>
@@ -290,7 +274,6 @@ where
             record_iter,
             batch_size,
             parsers,
-            labels: HashMap::new(),
         }
     }
 
@@ -347,19 +330,6 @@ where
                 FieldParser::UInt32(parse) => {
                     build_primitive_array::<UInt32Type, UInt32Parser>(&rows, i, parse)
                 }
-                FieldParser::Dict => {
-                    let mut builder = PrimitiveBuilder::<UInt64Type>::new(rows.len());
-                    for r in &rows {
-                        let key = std::str::from_utf8(r.get(i).unwrap_or_default())
-                            .map_err(|e| ArrowError::ParseError(e.to_string()))?;
-                        let id = get_hash(&key);
-
-                        let map = self.labels.entry(i).or_insert_with(HashMap::new);
-                        map.entry(key.to_string()).or_insert(id);
-                        builder.append_value(id)?;
-                    }
-                    Arc::new(builder.finish())
-                }
             };
             arrays.push(col);
         }
@@ -383,15 +353,10 @@ where
                     FieldParser::UInt32(_) => {
                         Arc::new(PrimitiveBuilder::<UInt32Type>::new(0).finish())
                     }
-                    FieldParser::Dict => Arc::new(PrimitiveBuilder::<UInt64Type>::new(0).finish()),
                 }
             })
             .collect();
         record::Batch::new(arrays)
-    }
-
-    pub fn finish(self) -> EnumMaps {
-        self.labels
     }
 }
 
@@ -456,10 +421,9 @@ mod tests {
     use arrow::array::{Array, BinaryArray, StringArray};
     use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
-    use std::collections::HashMap;
     use std::net::Ipv4Addr;
 
-    fn get_test_data() -> (Vec<Vec<u8>>, EnumMaps, Vec<Column>) {
+    fn get_test_data() -> (Vec<Vec<u8>>, Vec<Column>) {
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
         let c1_v: Vec<_> = vec!["111a qwer", "b", "c", "d", "b", "111a qwer", "111a qwer"];
         let c2_v: Vec<Ipv4Addr> = vec![
@@ -482,8 +446,10 @@ mod tests {
             NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
         ];
 
-        let sid = vec![get_hash("t1"), get_hash("t2"), get_hash("t3")];
-        let c5_v: Vec<u64> = vec![sid[0], sid[1], sid[1], sid[1], sid[1], sid[1], sid[2]];
+        let fields = vec!["t1", "t2", "t3"];
+        let c5_v: Vec<_> = vec![
+            fields[0], fields[1], fields[1], fields[1], fields[1], fields[1], fields[2],
+        ];
         let c6_v: Vec<&[u8]> = vec![
             b"111a qwer",
             b"b",
@@ -493,12 +459,6 @@ mod tests {
             b"111a qwer",
             b"111a qwer",
         ];
-
-        let mut c5_map: HashMap<u64, String> = HashMap::new();
-
-        c5_map.insert(sid[0], "t1".to_string());
-        c5_map.insert(sid[1], "t2".to_string());
-        c5_map.insert(sid[2], "t3".to_string());
 
         let mut data = vec![];
         let fmt = "%Y-%m-%d %H:%M:%S";
@@ -522,14 +482,11 @@ mod tests {
             row.extend_from_slice(b",");
             row.extend(c4.format(fmt).to_string().into_bytes());
             row.extend_from_slice(b",");
-            row.extend(c5_map.get(c5).unwrap().to_string().into_bytes());
+            row.extend(c5.to_string().into_bytes());
             row.extend_from_slice(b",");
             row.extend_from_slice(c6);
             data.push(row);
         }
-
-        let mut labels = HashMap::new();
-        labels.insert(5, c5_map.into_iter().map(|(k, v)| (v, k)).collect());
 
         let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
         let c1_a: Arc<dyn Array> = Arc::new(StringArray::from(c1_v));
@@ -549,11 +506,12 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        let c5 = Column::try_from_slice::<UInt64Type>(&c5_v).unwrap();
+        let c5_a: Arc<dyn Array> = Arc::new(StringArray::from(c5_v));
+        let c5 = Column::from(c5_a);
         let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::from(c6_v));
         let c6 = Column::from(c6_a);
         let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
-        (data, labels, columns)
+        (data, columns)
     }
 
     #[test]
@@ -589,10 +547,10 @@ mod tests {
                 let val: String = v.iter().map(|&c| c as char).collect();
                 Ok(NaiveDateTime::parse_from_str(&val, "%Y-%m-%d %H:%M:%S")?.timestamp())
             }),
-            FieldParser::Dict,
+            FieldParser::Utf8,
             FieldParser::Binary,
         ];
-        let (data, _, columns) = get_test_data();
+        let (data, columns) = get_test_data();
         let mut reader = Reader::new(data.iter().map(|d| d.as_slice()), data.len(), &parsers);
         let result: Vec<Column> = if let Some(batch) = reader.next_batch().unwrap() {
             batch.columns().iter().map(|c| c.clone().into()).collect()
