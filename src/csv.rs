@@ -3,6 +3,5 @@
 pub(crate) mod reader;
 
 pub use reader::infer_schema;
-pub use reader::EnumMaps;
 pub use reader::FieldParser;
 pub use reader::Reader;
