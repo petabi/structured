@@ -20,7 +20,7 @@ use crate::stats::{
     GroupElement, GroupElementCount, NLargestCount,
 };
 
-pub type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
+type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
 /// The data type of a table column.
 #[derive(Clone, Copy, Debug, Deserialize, EnumString, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
