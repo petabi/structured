@@ -42,9 +42,8 @@ impl From<ColumnType> for DataType {
             ColumnType::Int64 => Self::Int64,
             ColumnType::Float64 => Self::Float64,
             ColumnType::DateTime => Self::Timestamp(TimeUnit::Second, None),
-            ColumnType::Enum => Self::UInt64,
+            ColumnType::Enum | ColumnType::Utf8 => Self::Utf8,
             ColumnType::IpAddr => Self::UInt32,
-            ColumnType::Utf8 => Self::Utf8,
             ColumnType::Binary => Self::Binary,
         }
     }
