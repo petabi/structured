@@ -17,7 +17,6 @@ exclude = ["./github"]
 codecov = { repository = "petabi/structured", service = "github" }
 
 [dependencies]
-ahash = "0.7"
 arrow = "4"
 chrono = { version = "^0.4.9", features = ["serde"] }
 csv-core = "0.1"
@@ -29,3 +28,6 @@ strum_macros = "0.21"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "^1.0.13", features = ["preserve_order"] }
 thiserror = "1"
+
+[dev-dependencies]
+ahash = "0.7"
