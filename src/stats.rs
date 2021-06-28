@@ -271,7 +271,7 @@ macro_rules! top_n {
                 count: *y,
             });
         }
-        $d.mode = Some(top_n[0].value.clone());
+        $d.mode = top_n.first().map(|v| v.value.clone());
         $d.top_n = Some(top_n);
     };
 }
