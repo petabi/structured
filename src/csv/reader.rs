@@ -424,7 +424,7 @@ mod tests {
     use itertools::izip;
     use std::net::Ipv4Addr;
 
-    fn get_test_data() -> (Vec<Vec<u8>>, Vec<Column>) {
+    fn test_data() -> (Vec<Vec<u8>>, Vec<Column>) {
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
         let c1_v: Vec<_> = vec!["111a qwer", "b", "c", "d", "b", "111a qwer", "111a qwer"];
         let c2_v: Vec<Ipv4Addr> = vec![
@@ -551,7 +551,7 @@ mod tests {
             FieldParser::Utf8,
             FieldParser::Binary,
         ];
-        let (data, columns) = get_test_data();
+        let (data, columns) = test_data();
         let mut reader = Reader::new(data.iter().map(|d| d.as_slice()), data.len(), &parsers);
         let result: Vec<Column> = if let Some(batch) = reader.next_batch().unwrap() {
             batch.columns().iter().map(|c| c.clone().into()).collect()
