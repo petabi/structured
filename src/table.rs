@@ -165,7 +165,7 @@ impl Table {
                     )
                 } else if let ColumnType::Float64 = column_types[index] {
                     if let (Some(Element::Float(min)), Some(Element::Float(max))) =
-                        (description.get_min(), description.get_max())
+                        (description.min(), description.max())
                     {
                         n_largest_count_float64(
                             column,
@@ -286,7 +286,7 @@ impl Table {
     }
 
     #[must_use]
-    pub fn get_index_of_event(&self, eventid: u64) -> Option<&usize> {
+    pub fn event_index(&self, eventid: u64) -> Option<&usize> {
         self.event_ids.get(&eventid)
     }
 }
@@ -657,7 +657,7 @@ mod tests {
     use std::hash::{Hash, Hasher};
     use std::net::{IpAddr, Ipv4Addr};
 
-    fn get_hash(seq: &str) -> u64 {
+    fn hash(seq: &str) -> u64 {
         let mut hasher = AHasher::default();
         seq.hash(&mut hasher);
         hasher.finish()
@@ -784,7 +784,7 @@ mod tests {
                 .timestamp(),
         ];
         let tester = vec!["t1".to_string(), "t2".to_string(), "t3".to_string()];
-        let sid = tester.iter().map(|s| get_hash(s)).collect::<Vec<_>>();
+        let sid = tester.iter().map(|s| hash(s)).collect::<Vec<_>>();
         let c5_v: Vec<u64> = vec![sid[0], sid[1], sid[1], sid[1], sid[1], sid[1], sid[2]];
         let c6_v: Vec<&[u8]> = vec![
             b"111a qwer",
@@ -827,24 +827,24 @@ mod tests {
             &numbers_of_top_n,
         );
 
-        assert_eq!(4, stat[0].n_largest_count.number_of_elements);
+        assert_eq!(4, stat[0].n_largest_count.number_of_elements());
         assert_eq!(
             Element::Text("111a qwer".to_string()),
-            *stat[1].n_largest_count.get_mode().unwrap()
+            *stat[1].n_largest_count.mode().unwrap()
         );
         assert_eq!(
             Element::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
-            stat[2].n_largest_count.get_top_n()[1].value
+            stat[2].n_largest_count.top_n()[1].value
         );
-        assert_eq!(3, stat[3].n_largest_count.number_of_elements);
+        assert_eq!(3, stat[3].n_largest_count.number_of_elements());
         assert_eq!(
             Element::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
-            stat[4].n_largest_count.get_top_n()[0].value
+            stat[4].n_largest_count.top_n()[0].value
         );
-        assert_eq!(3, stat[5].n_largest_count.number_of_elements);
+        assert_eq!(3, stat[5].n_largest_count.number_of_elements());
         assert_eq!(
             Element::Binary(b"111a qwer".to_vec()),
-            *stat[6].n_largest_count.get_mode().unwrap()
+            *stat[6].n_largest_count.mode().unwrap()
         );
 
         let c5_r_map: ReverseEnumMaps = vec![(
@@ -864,27 +864,27 @@ mod tests {
             &numbers_of_top_n,
         );
 
-        assert_eq!(4, stat[0].n_largest_count.number_of_elements);
+        assert_eq!(4, stat[0].n_largest_count.number_of_elements());
         assert_eq!(
             Element::Text("111a qwer".to_string()),
-            *stat[1].n_largest_count.get_mode().unwrap()
+            *stat[1].n_largest_count.mode().unwrap()
         );
         assert_eq!(
             Element::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
-            stat[2].n_largest_count.get_top_n()[1].value
+            stat[2].n_largest_count.top_n()[1].value
         );
-        assert_eq!(3, stat[3].n_largest_count.number_of_elements);
+        assert_eq!(3, stat[3].n_largest_count.number_of_elements());
         assert_eq!(
             Element::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
-            stat[4].n_largest_count.get_top_n()[0].value
+            stat[4].n_largest_count.top_n()[0].value
         );
         assert_eq!(
             Element::Enum("t2".to_string()),
-            *stat[5].n_largest_count.get_mode().unwrap()
+            *stat[5].n_largest_count.mode().unwrap()
         );
         assert_eq!(
             Element::Binary(b"111a qwer".to_vec()),
-            *stat[6].n_largest_count.get_mode().unwrap()
+            *stat[6].n_largest_count.mode().unwrap()
         );
     }
 }

@@ -89,11 +89,11 @@ pub struct ColumnStatistics {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Description {
-    pub(crate) count: usize,
-    pub(crate) mean: Option<f64>,
-    pub(crate) s_deviation: Option<f64>,
-    pub(crate) min: Option<Element>,
-    pub(crate) max: Option<Element>,
+    count: usize,
+    mean: Option<f64>,
+    s_deviation: Option<f64>,
+    min: Option<Element>,
+    max: Option<Element>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,9 +104,9 @@ pub struct ElementCount {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct NLargestCount {
-    pub(crate) number_of_elements: usize,
-    pub(crate) top_n: Vec<ElementCount>,
-    pub(crate) mode: Option<Element>,
+    number_of_elements: usize,
+    top_n: Vec<ElementCount>,
+    mode: Option<Element>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,16 +126,16 @@ impl fmt::Display for Description {
         writeln!(f, "Start of Description")?;
         writeln!(f, "   count: {}", self.count)?;
         if self.mean.is_some() {
-            writeln!(f, "   mean: {}", self.get_mean().unwrap())?;
+            writeln!(f, "   mean: {}", self.mean().unwrap())?;
         }
         if self.s_deviation.is_some() {
-            writeln!(f, "   s-deviation: {}", self.get_s_deviation().unwrap())?;
+            writeln!(f, "   s-deviation: {}", self.std_deviation().unwrap())?;
         }
         if self.min.is_some() {
-            writeln!(f, "   min: {}", self.get_min().unwrap())?;
+            writeln!(f, "   min: {}", self.min().unwrap())?;
         }
         if self.max.is_some() {
-            writeln!(f, "   max: {}", self.get_max().unwrap())?;
+            writeln!(f, "   max: {}", self.max().unwrap())?;
         }
         writeln!(f, "End of Description")
     }
@@ -144,17 +144,13 @@ impl fmt::Display for Description {
 impl fmt::Display for NLargestCount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Start of NLargestCount")?;
-        writeln!(
-            f,
-            "   number of elements: {}",
-            self.get_number_of_elements()
-        )?;
+        writeln!(f, "   number of elements: {}", self.number_of_elements())?;
         writeln!(f, "   Top N")?;
-        for elem in self.get_top_n() {
+        for elem in self.top_n() {
             writeln!(f, "      data: {}      count: {}", elem.value, elem.count)?;
         }
         if self.mode.is_some() {
-            writeln!(f, "   mode: {}", self.get_mode().unwrap())?;
+            writeln!(f, "   mode: {}", self.mode().unwrap())?;
         }
         writeln!(f, "End of NLargestCount")
     }
@@ -179,27 +175,27 @@ impl Description {
     }
 
     #[must_use]
-    pub fn get_count(&self) -> usize {
+    pub fn count(&self) -> usize {
         self.count
     }
 
     #[must_use]
-    pub fn get_mean(&self) -> Option<f64> {
+    pub fn mean(&self) -> Option<f64> {
         self.mean
     }
 
     #[must_use]
-    pub fn get_s_deviation(&self) -> Option<f64> {
+    pub fn std_deviation(&self) -> Option<f64> {
         self.s_deviation
     }
 
     #[must_use]
-    pub fn get_min(&self) -> Option<&Element> {
+    pub fn min(&self) -> Option<&Element> {
         self.min.as_ref()
     }
 
     #[must_use]
-    pub fn get_max(&self) -> Option<&Element> {
+    pub fn max(&self) -> Option<&Element> {
         self.max.as_ref()
     }
 }
@@ -215,17 +211,17 @@ impl NLargestCount {
     }
 
     #[must_use]
-    pub fn get_number_of_elements(&self) -> usize {
+    pub fn number_of_elements(&self) -> usize {
         self.number_of_elements
     }
 
     #[must_use]
-    pub fn get_top_n(&self) -> &Vec<ElementCount> {
+    pub fn top_n(&self) -> &Vec<ElementCount> {
         &self.top_n
     }
 
     #[must_use]
-    pub fn get_mode(&self) -> Option<&Element> {
+    pub fn mode(&self) -> Option<&Element> {
         self.mode.as_ref()
     }
 }
@@ -390,7 +386,7 @@ pub(crate) fn n_largest_count_enum(
         if reverse_map.is_empty() {
             (
                 n_largest_count
-                    .get_top_n()
+                    .top_n()
                     .iter()
                     .map(|elem| {
                         if let Element::UInt(value) = elem.value {
@@ -406,7 +402,7 @@ pub(crate) fn n_largest_count_enum(
                         }
                     })
                     .collect(),
-                match n_largest_count.get_mode() {
+                match n_largest_count.mode() {
                     Some(mode) => {
                         if let Element::UInt(value) = mode {
                             Some(Element::Enum(value.to_string()))
@@ -420,7 +416,7 @@ pub(crate) fn n_largest_count_enum(
         } else {
             (
                 n_largest_count
-                    .get_top_n()
+                    .top_n()
                     .iter()
                     .map(|elem| {
                         if let Element::UInt(value) = elem.value {
@@ -448,7 +444,7 @@ pub(crate) fn n_largest_count_enum(
                         }
                     })
                     .collect(),
-                match n_largest_count.get_mode() {
+                match n_largest_count.mode() {
                     Some(mode) => {
                         if let Element::UInt(value) = mode {
                             Some(Element::Enum(reverse_map.get(value).map_or(
@@ -475,7 +471,7 @@ pub(crate) fn n_largest_count_enum(
     };
 
     NLargestCount {
-        number_of_elements: n_largest_count.get_number_of_elements(),
+        number_of_elements: n_largest_count.number_of_elements(),
         top_n,
         mode,
     }
