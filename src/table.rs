@@ -834,12 +834,12 @@ mod tests {
         );
         assert_eq!(
             Element::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
-            stat[2].n_largest_count.get_top_n().unwrap()[1].value
+            stat[2].n_largest_count.get_top_n()[1].value
         );
         assert_eq!(3, stat[3].n_largest_count.number_of_elements);
         assert_eq!(
             Element::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
-            stat[4].n_largest_count.get_top_n().unwrap()[0].value
+            stat[4].n_largest_count.get_top_n()[0].value
         );
         assert_eq!(3, stat[5].n_largest_count.number_of_elements);
         assert_eq!(
@@ -871,12 +871,12 @@ mod tests {
         );
         assert_eq!(
             Element::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
-            stat[2].n_largest_count.get_top_n().unwrap()[1].value
+            stat[2].n_largest_count.get_top_n()[1].value
         );
         assert_eq!(3, stat[3].n_largest_count.number_of_elements);
         assert_eq!(
             Element::DateTime(NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 0, 0)),
-            stat[4].n_largest_count.get_top_n().unwrap()[0].value
+            stat[4].n_largest_count.get_top_n()[0].value
         );
         assert_eq!(
             Element::Enum("t2".to_string()),
