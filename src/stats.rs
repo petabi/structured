@@ -105,7 +105,7 @@ pub struct ElementCount {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct NLargestCount {
     pub(crate) number_of_elements: usize,
-    pub(crate) top_n: Option<Vec<ElementCount>>,
+    pub(crate) top_n: Vec<ElementCount>,
     pub(crate) mode: Option<Element>,
 }
 
@@ -150,7 +150,7 @@ impl fmt::Display for NLargestCount {
             self.get_number_of_elements()
         )?;
         writeln!(f, "   Top N")?;
-        for elem in self.get_top_n().unwrap() {
+        for elem in self.get_top_n() {
             writeln!(f, "      data: {}      count: {}", elem.value, elem.count)?;
         }
         if self.mode.is_some() {
@@ -206,11 +206,7 @@ impl Description {
 
 impl NLargestCount {
     #[must_use]
-    pub fn new(
-        number_of_elements: usize,
-        top_n: Option<Vec<ElementCount>>,
-        mode: Option<Element>,
-    ) -> Self {
+    pub fn new(number_of_elements: usize, top_n: Vec<ElementCount>, mode: Option<Element>) -> Self {
         Self {
             number_of_elements,
             top_n,
@@ -224,8 +220,8 @@ impl NLargestCount {
     }
 
     #[must_use]
-    pub fn get_top_n(&self) -> Option<&Vec<ElementCount>> {
-        self.top_n.as_ref()
+    pub fn get_top_n(&self) -> &Vec<ElementCount> {
+        &self.top_n
     }
 
     #[must_use]
@@ -272,7 +268,7 @@ macro_rules! top_n {
             });
         }
         $d.mode = top_n.first().map(|v| v.value.clone());
-        $d.top_n = Some(top_n);
+        $d.top_n = top_n;
     };
 }
 
@@ -393,24 +389,23 @@ pub(crate) fn n_largest_count_enum(
     let (top_n, mode) = {
         if reverse_map.is_empty() {
             (
-                n_largest_count.get_top_n().map(|top_n| {
-                    top_n
-                        .iter()
-                        .map(|elem| {
-                            if let Element::UInt(value) = elem.value {
-                                ElementCount {
-                                    value: Element::Enum(value.to_string()),
-                                    count: elem.count,
-                                }
-                            } else {
-                                ElementCount {
-                                    value: Element::Enum("_N/A_".to_string()),
-                                    count: elem.count,
-                                }
+                n_largest_count
+                    .get_top_n()
+                    .iter()
+                    .map(|elem| {
+                        if let Element::UInt(value) = elem.value {
+                            ElementCount {
+                                value: Element::Enum(value.to_string()),
+                                count: elem.count,
                             }
-                        })
-                        .collect()
-                }),
+                        } else {
+                            ElementCount {
+                                value: Element::Enum("_N/A_".to_string()),
+                                count: elem.count,
+                            }
+                        }
+                    })
+                    .collect(),
                 match n_largest_count.get_mode() {
                     Some(mode) => {
                         if let Element::UInt(value) = mode {
@@ -424,36 +419,35 @@ pub(crate) fn n_largest_count_enum(
             )
         } else {
             (
-                n_largest_count.get_top_n().map(|top_n| {
-                    top_n
-                        .iter()
-                        .map(|elem| {
-                            if let Element::UInt(value) = elem.value {
-                                ElementCount {
-                                    value: Element::Enum(reverse_map.get(&value).map_or(
-                                        "_NO_MAP_".to_string(),
-                                        |v| {
-                                            let mut s = String::new();
-                                            for (i, e) in v.iter().enumerate() {
-                                                s.push_str(e);
-                                                if i < v.len() - 1 {
-                                                    s.push('|');
-                                                }
+                n_largest_count
+                    .get_top_n()
+                    .iter()
+                    .map(|elem| {
+                        if let Element::UInt(value) = elem.value {
+                            ElementCount {
+                                value: Element::Enum(reverse_map.get(&value).map_or(
+                                    "_NO_MAP_".to_string(),
+                                    |v| {
+                                        let mut s = String::new();
+                                        for (i, e) in v.iter().enumerate() {
+                                            s.push_str(e);
+                                            if i < v.len() - 1 {
+                                                s.push('|');
                                             }
-                                            s
-                                        },
-                                    )),
-                                    count: elem.count,
-                                }
-                            } else {
-                                ElementCount {
-                                    value: Element::Enum("_N/A_".to_string()),
-                                    count: elem.count,
-                                }
+                                        }
+                                        s
+                                    },
+                                )),
+                                count: elem.count,
                             }
-                        })
-                        .collect()
-                }),
+                        } else {
+                            ElementCount {
+                                value: Element::Enum("_N/A_".to_string()),
+                                count: elem.count,
+                            }
+                        }
+                    })
+                    .collect(),
                 match n_largest_count.get_mode() {
                     Some(mode) => {
                         if let Element::UInt(value) = mode {
@@ -501,7 +495,7 @@ pub(crate) fn n_largest_count_float64(
     let (rc, rt) = top_n_f64(iter, min, max, number_of_top_n);
     n_largest_count.number_of_elements = rc;
     n_largest_count.mode = Some(rt[0].value.clone());
-    n_largest_count.top_n = Some(rt);
+    n_largest_count.top_n = rt;
 
     n_largest_count
 }
