@@ -35,10 +35,11 @@ impl Record {
             match res {
                 ReadRecordResult::InputEmpty => continue,
                 ReadRecordResult::OutputFull => {
-                    fields.resize(std::cmp::max(4, fields.len().checked_mul(2).unwrap()), 0)
+                    fields.resize(std::cmp::max(4, fields.len().checked_mul(2).unwrap()), 0);
                 }
+
                 ReadRecordResult::OutputEndsFull => {
-                    ends.resize(std::cmp::max(4, ends.len().checked_mul(2).unwrap()), 0)
+                    ends.resize(std::cmp::max(4, ends.len().checked_mul(2).unwrap()), 0);
                 }
                 ReadRecordResult::Record => {
                     unsafe {
@@ -72,10 +73,10 @@ impl Record {
             match res {
                 ReadRecordResult::InputEmpty => continue,
                 ReadRecordResult::OutputFull => {
-                    fields.resize(std::cmp::max(4, fields.len().checked_mul(2).unwrap()), 0)
+                    fields.resize(std::cmp::max(4, fields.len().checked_mul(2).unwrap()), 0);
                 }
                 ReadRecordResult::OutputEndsFull => {
-                    ends.resize(std::cmp::max(4, ends.len().checked_mul(2).unwrap()), 0)
+                    ends.resize(std::cmp::max(4, ends.len().checked_mul(2).unwrap()), 0);
                 }
                 ReadRecordResult::Record => {
                     unsafe {
@@ -289,7 +290,7 @@ where
             match self.record_iter.next() {
                 Some(r) => {
                     if let Some(r) = Record::new(&mut csv_reader, r) {
-                        rows.push(r)
+                        rows.push(r);
                     }
                     // Skip invalid rows.
                 }
@@ -371,7 +372,7 @@ where
         match row.get(col_idx) {
             Some(s) if !s.is_empty() => {
                 let t = parse(s).unwrap_or_default();
-                builder.append_value(t).expect("never fails")
+                builder.append_value(t).expect("never fails");
             }
             _ => builder
                 .append_value(T::Native::default())
