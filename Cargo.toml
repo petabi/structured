@@ -16,6 +16,9 @@ exclude = ["./github"]
 [badges]
 codecov = { repository = "petabi/structured", service = "github" }
 
+[features]
+js = ["arrow/js"]
+
 [dependencies]
 arrow = "5"
 chrono = { version = "^0.4.9", features = ["serde"] }
