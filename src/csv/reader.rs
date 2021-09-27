@@ -5,6 +5,7 @@ use arrow::datatypes::{
 };
 use arrow::error::ArrowError;
 use csv_core::ReadRecordResult;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::str::{self, FromStr};
@@ -255,6 +256,30 @@ fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
     )
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Config {
+    delimiter: u8,
+    quote: u8,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            delimiter: b',',
+            quote: b'"',
+        }
+    }
+}
+
+impl From<Config> for csv_core::ReaderBuilder {
+    fn from(config: Config) -> csv_core::ReaderBuilder {
+        let mut builder = csv_core::ReaderBuilder::new();
+        builder.delimiter(config.delimiter);
+        builder.quote(config.quote);
+        builder
+    }
+}
+
 /// CSV reader
 pub struct Reader<'a, I>
 where
@@ -263,6 +288,7 @@ where
     record_iter: I,
     batch_size: usize,
     parsers: &'a [FieldParser],
+    builder: csv_core::ReaderBuilder,
 }
 
 impl<'a, I> Reader<'a, I>
@@ -275,6 +301,21 @@ where
             record_iter,
             batch_size,
             parsers,
+            builder: csv_core::ReaderBuilder::new(),
+        }
+    }
+
+    pub fn with_config(
+        config: Config,
+        record_iter: I,
+        batch_size: usize,
+        parsers: &'a [FieldParser],
+    ) -> Self {
+        Reader {
+            record_iter,
+            batch_size,
+            parsers,
+            builder: config.into(),
         }
     }
 
@@ -285,7 +326,7 @@ where
     /// Returns an error of parsing a field fails.
     pub fn next_batch(&mut self) -> Result<Option<record::Batch>, arrow::error::ArrowError> {
         let mut rows = Vec::with_capacity(self.batch_size);
-        let mut csv_reader = csv_core::Reader::new();
+        let mut csv_reader = self.builder.build();
         for _ in 0..self.batch_size {
             match self.record_iter.next() {
                 Some(r) => {
