@@ -34,3 +34,4 @@ thiserror = "1"
 
 [dev-dependencies]
 ahash = "0.7"
+serde_test = "1.0"
