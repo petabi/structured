@@ -256,7 +256,7 @@ fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
     )
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Config {
     delimiter: u8,
     quote: u8,
@@ -463,6 +463,7 @@ mod tests {
     use arrow::array::{Array, BinaryArray, StringArray};
     use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
+    use serde_test::{assert_tokens, Token};
     use std::net::Ipv4Addr;
 
     fn test_data() -> (Vec<Vec<u8>>, Vec<Column>) {
@@ -600,5 +601,39 @@ mod tests {
             Vec::new()
         };
         assert_eq!(result, columns);
+    }
+
+    #[test]
+    fn config() {
+        let config = Config {
+            delimiter: b' ',
+            quote: b'\t',
+        };
+        assert_tokens(
+            &config,
+            &[
+                Token::Struct {
+                    name: "Config",
+                    len: 2,
+                },
+                Token::Str("delimiter"),
+                Token::U8(b' '),
+                Token::Str("quote"),
+                Token::U8(b'\t'),
+                Token::StructEnd,
+            ],
+        );
+
+        let config_str = r#"
+        {
+            "delimiter": 32,
+            "quote": 42
+        }"#;
+
+        let config = Config {
+            delimiter: b' ', // b' ' = 32
+            quote: b'*',     // b'*' = 42
+        };
+        assert_eq!(config, serde_json::from_str(config_str).unwrap());
     }
 }
