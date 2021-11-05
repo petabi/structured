@@ -25,6 +25,8 @@ chrono = { version = "^0.4.9", features = ["serde"] }
 csv-core = "0.1"
 itertools = "0.10"
 num-traits = "0.2"
+percent-encoding = "2.1"
+regex = "1"
 statistical = "1"
 strum = "0.22"
 strum_macros = "0.22"

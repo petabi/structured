@@ -2,6 +2,7 @@ pub mod csv;
 pub mod record;
 mod stats;
 mod table;
+pub mod token;
 
 pub use arrow;
 pub use stats::{

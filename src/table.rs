@@ -19,6 +19,7 @@ use crate::stats::{
     n_largest_count_enum, n_largest_count_float64, ColumnStatistics, Element, GroupCount,
     GroupElement, GroupElementCount, NLargestCount,
 };
+use crate::token::{ColumnMessages, ContentFlag};
 
 type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
 /// The data type of a table column.
@@ -121,6 +122,29 @@ impl Table {
             let col = &self.columns[0];
             col.len()
         }
+    }
+
+    /// Returns the column's content of `event_id` in `row_events` for each `target_columns`
+    #[must_use]
+    pub fn column_messages(
+        &self,
+        row_events: &[(usize, u64)], // row index, event_id
+        target_columns: &[usize],
+        flag: &ContentFlag,
+    ) -> Vec<(usize, ColumnMessages)> {
+        let mut column_messages: Vec<(usize, ColumnMessages)> = Vec::new();
+        for colidx in target_columns {
+            let mut col_msg = ColumnMessages::default();
+            if let Some(column) = self.columns.get(*colidx) {
+                for (row_index, event_id) in row_events {
+                    if let Ok(Some(message)) = column.string_try_get(*row_index) {
+                        col_msg.add(*event_id, message, flag);
+                    }
+                }
+            }
+            column_messages.push((*colidx, col_msg));
+        }
+        column_messages
     }
 
     #[must_use]
