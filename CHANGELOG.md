@@ -9,6 +9,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 * Add labeling related code. Read the column data in `token` form or the `entire contents`.
+* Add raw_event retrieving function for the detected events
 
 ## [0.7.0] - 2021-10-20
 

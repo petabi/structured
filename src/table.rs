@@ -133,18 +133,43 @@ impl Table {
         flag: &ContentFlag,
     ) -> Vec<(usize, ColumnMessages)> {
         let mut column_messages: Vec<(usize, ColumnMessages)> = Vec::new();
-        for colidx in target_columns {
+        for column_id in target_columns {
             let mut col_msg = ColumnMessages::default();
-            if let Some(column) = self.columns.get(*colidx) {
+            if let Some(column) = self.columns.get(*column_id) {
                 for (row_index, event_id) in row_events {
                     if let Ok(Some(message)) = column.string_try_get(*row_index) {
                         col_msg.add(*event_id, message, flag);
                     }
                 }
             }
-            column_messages.push((*colidx, col_msg));
+            column_messages.push((*column_id, col_msg));
         }
         column_messages
+    }
+
+    /// Return columns content for the detected event to send review
+    // TODO: consider `column_types`. MERGE this function to column_messages()
+    #[must_use]
+    pub fn column_raw_content(
+        &self,
+        row_events: &[(usize, u64)],
+        _column_types: &Arc<Vec<ColumnType>>,
+        target_columns: &[usize],
+    ) -> HashMap<u64, Vec<Option<String>>> {
+        let mut rst: HashMap<u64, Vec<Option<String>>> = HashMap::new();
+        for column_id in target_columns {
+            if let Some(column) = self.columns.get(*column_id) {
+                for (row_index, event_id) in row_events {
+                    let t = rst.entry(*event_id).or_insert_with(Vec::new);
+                    if let Ok(Some(message)) = column.string_try_get(*row_index) {
+                        t.push(Some(message.to_string()));
+                    } else {
+                        t.push(None);
+                    }
+                }
+            }
+        }
+        rst
     }
 
     #[must_use]
