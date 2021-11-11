@@ -154,10 +154,10 @@ impl Table {
     pub fn column_raw_content(
         &self,
         events: &[u64],
-        target_columns: &[usize],
+        target_columns: &[(usize, &str)],
     ) -> HashMap<u64, Vec<Option<String>>> {
         let mut rst: HashMap<u64, Vec<Option<String>>> = HashMap::new();
-        for column_id in target_columns {
+        for (column_id, _) in target_columns {
             if let Some(column) = self.columns.get(*column_id) {
                 for eventid in events {
                     if let Some(row_index) = Self::event_index(self, *eventid) {
