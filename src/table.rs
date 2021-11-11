@@ -160,7 +160,7 @@ impl Table {
         for column_id in target_columns {
             if let Some(column) = self.columns.get(*column_id) {
                 for eventid in events {
-                    if let Some(row_index) = Self::event_index(&self, *eventid) {
+                    if let Some(row_index) = Self::event_index(self, *eventid) {
                         let t = rst.entry(*eventid).or_insert_with(Vec::new);
                         if let Ok(Some(message)) = column.string_try_get(*row_index) {
                             t.push(Some(message.to_string()));
