@@ -3,7 +3,9 @@ use arrow::array::{
     PrimitiveArray, PrimitiveBuilder, StringArray, UInt16Array, UInt32Array, UInt64Array,
     UInt8Array,
 };
-use arrow::datatypes::{ArrowPrimitiveType, DataType, Int64Type, Schema, TimeUnit};
+use arrow::datatypes::{
+    ArrowPrimitiveType, DataType, Float64Type, Int64Type, Schema, TimeUnit, UInt64Type,
+};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -126,48 +128,111 @@ impl Table {
 
     /// Returns the column's content of `event_id` in `row_events` for each `target_columns`
     #[must_use]
-    pub fn column_messages(
+    pub fn column_values(
         &self,
-        row_events: &[(usize, u64)], // row index, event_id
+        events: &[u64],
+        column_types: &Arc<Vec<ColumnType>>,
         target_columns: &[usize],
         flag: &ContentFlag,
     ) -> Vec<(usize, ColumnMessages)> {
-        let mut column_messages: Vec<(usize, ColumnMessages)> = Vec::new();
+        let selected = events
+            .iter()
+            .filter_map(|eventid| self.event_index(*eventid).map(|index| (*eventid, *index)))
+            .collect::<Vec<_>>();
+
+        let mut column_values: Vec<(usize, ColumnMessages)> = Vec::new();
         for column_id in target_columns {
-            let mut col_msg = ColumnMessages::default();
-            if let Some(column) = self.columns.get(*column_id) {
-                for (row_index, event_id) in row_events {
-                    if let Ok(Some(message)) = column.string_try_get(*row_index) {
-                        col_msg.add(*event_id, message, flag);
+            if let Some(column_type) = column_types.get(*column_id) {
+                let mut msg = ColumnMessages::default();
+                if let Some(column) = self.columns.get(*column_id) {
+                    for (eventid, index) in &selected {
+                        if let Some(value) =
+                            Self::column_value_to_string(column, *column_type, *index)
+                        {
+                            msg.add(*eventid, value.as_str(), flag);
+                        }
                     }
                 }
+                column_values.push((*column_id, msg));
             }
-            column_messages.push((*column_id, col_msg));
         }
-        column_messages
+        column_values
     }
 
-    /// Return columns content for the detected event to send review
-    // * TODO: consider `column_types`.
+    fn column_value_to_string(
+        column: &Column,
+        column_type: ColumnType,
+        index: usize,
+    ) -> Option<String> {
+        match column_type {
+            ColumnType::DateTime => {
+                if let Ok(Some(value)) = column.primitive_try_get::<Int64Type>(index) {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            }
+            ColumnType::Int64 => {
+                if let Ok(Some(value)) = column.primitive_try_get::<Int64Type>(index) {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            }
+            ColumnType::Enum => {
+                if let Ok(Some(value)) = column.primitive_try_get::<UInt64Type>(index) {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            }
+            ColumnType::Float64 => {
+                if let Ok(Some(value)) = column.primitive_try_get::<Float64Type>(index) {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            }
+            _ => {
+                if let Ok(Some(value)) = column.string_try_get(index) {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// Return columns content for the selected event
     // * TODO: MERGE this function to column_messages()
     #[must_use]
     pub fn column_raw_content(
         &self,
         events: &[u64],
+        column_types: &Arc<Vec<ColumnType>>,
         target_columns: &[(usize, &str)],
     ) -> HashMap<u64, Vec<Option<String>>> {
+        let selected = events
+            .iter()
+            .filter_map(|eventid| self.event_index(*eventid).map(|index| (*eventid, *index)))
+            .collect::<Vec<_>>();
+
         let mut rst: HashMap<u64, Vec<Option<String>>> = HashMap::new();
         for (column_id, _) in target_columns {
-            if let Some(column) = self.columns.get(*column_id) {
-                for eventid in events {
-                    if let Some(row_index) = Self::event_index(self, *eventid) {
+            if let Some(column_type) = column_types.get(*column_id) {
+                if let Some(column) = self.columns.get(*column_id) {
+                    for (eventid, index) in &selected {
                         let t = rst.entry(*eventid).or_insert_with(Vec::new);
-                        if let Ok(Some(message)) = column.string_try_get(*row_index) {
-                            t.push(Some(message.to_string()));
-                        } else {
-                            t.push(None);
-                        }
+                        t.push(Self::column_value_to_string(column, *column_type, *index));
                     }
+                } else {
+                    for values in rst.values_mut() {
+                        values.push(None);
+                    }
+                }
+            } else {
+                for values in rst.values_mut() {
+                    values.push(None);
                 }
             }
         }

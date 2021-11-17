@@ -15,6 +15,7 @@ const RX_URL_ENCODED: &str = r#"%[0-9A-Fa-f]{2}"#;
 
 // characters treated as token
 const TOKEN_CHARS: [char; 4] = ['.', '_', '-', '@'];
+type EventId = u64;
 
 #[derive(Clone, PartialEq)]
 pub enum ContentKind {
@@ -58,8 +59,8 @@ impl ContentFlag {
 
 #[derive(Default, Debug)]
 pub struct ColumnMessages {
-    pub token_maps: Option<HashMap<Vec<String>, Vec<u64>>>,
-    pub event_maps: Option<HashMap<String, Vec<u64>>>,
+    pub token_maps: Option<HashMap<Vec<String>, Vec<EventId>>>,
+    pub event_maps: Option<HashMap<String, Vec<EventId>>>,
 }
 
 impl ColumnMessages {
@@ -69,14 +70,14 @@ impl ColumnMessages {
             || self.event_maps.as_ref().map_or(true, HashMap::is_empty)
     }
 
-    pub fn add(&mut self, event_id: u64, message: &str, flag: &ContentFlag) {
+    pub fn add(&mut self, event_id: EventId, value: &str, flag: &ContentFlag) {
         if flag.token() {
-            if let Some(tokens) = tokenize_message(message) {
+            if let Some(tokens) = tokenize_message(value) {
                 if let Some(x) = &mut self.token_maps {
                     let tmp = x.entry(tokens).or_insert_with(Vec::new);
                     tmp.push(event_id);
                 } else {
-                    let mut tmp: HashMap<Vec<String>, Vec<u64>> = HashMap::new();
+                    let mut tmp: HashMap<Vec<String>, Vec<EventId>> = HashMap::new();
                     tmp.insert(tokens, vec![event_id]);
                     self.token_maps = Some(tmp);
                 }
@@ -85,11 +86,11 @@ impl ColumnMessages {
 
         if flag.full() {
             if let Some(x) = &mut self.event_maps {
-                let tmp = x.entry(message.to_string()).or_insert_with(Vec::new);
+                let tmp = x.entry(value.to_string()).or_insert_with(Vec::new);
                 tmp.push(event_id);
             } else {
                 let mut tmp = HashMap::new();
-                tmp.insert(message.to_string(), vec![event_id]);
+                tmp.insert(value.to_string(), vec![event_id]);
                 self.event_maps = Some(tmp);
             }
         }
