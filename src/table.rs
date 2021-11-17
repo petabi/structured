@@ -165,14 +165,7 @@ impl Table {
         index: usize,
     ) -> Option<String> {
         match column_type {
-            ColumnType::DateTime => {
-                if let Ok(Some(value)) = column.primitive_try_get::<Int64Type>(index) {
-                    Some(value.to_string())
-                } else {
-                    None
-                }
-            }
-            ColumnType::Int64 => {
+            ColumnType::DateTime | ColumnType::Int64 => {
                 if let Ok(Some(value)) = column.primitive_try_get::<Int64Type>(index) {
                     Some(value.to_string())
                 } else {
