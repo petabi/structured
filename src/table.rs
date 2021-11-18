@@ -194,18 +194,20 @@ impl Table {
                     None
                 }
             }
-            _ => {
+            ColumnType::Utf8 => {
                 if let Ok(Some(value)) = column.string_try_get(index) {
                     Some(value.to_string())
                 } else {
                     None
                 }
             }
+            ColumnType::Binary => None,
         }
     }
 
     /// Return columns content for the selected event
-    // * TODO: MERGE this function to column_messages()
+    // * TODO: MERGE this function to column_values()
+    // * The number of `target_columns` elements == the number of vector element of return values
     #[must_use]
     pub fn column_raw_content(
         &self,
