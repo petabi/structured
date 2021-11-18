@@ -15,6 +15,7 @@ const RX_URL_ENCODED: &str = r#"%[0-9A-Fa-f]{2}"#;
 
 // characters treated as token
 const TOKEN_CHARS: [char; 4] = ['.', '_', '-', '@'];
+type EventId = u64;
 
 #[derive(Clone, PartialEq)]
 pub enum ContentKind {
@@ -58,8 +59,8 @@ impl ContentFlag {
 
 #[derive(Default, Debug)]
 pub struct ColumnMessages {
-    pub token_maps: Option<HashMap<Vec<String>, Vec<u64>>>,
-    pub event_maps: Option<HashMap<String, Vec<u64>>>,
+    pub token_maps: Option<HashMap<Vec<String>, Vec<EventId>>>,
+    pub event_maps: Option<HashMap<String, Vec<EventId>>>,
 }
 
 impl ColumnMessages {

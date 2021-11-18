@@ -3,12 +3,15 @@ use arrow::array::{
     PrimitiveArray, PrimitiveBuilder, StringArray, UInt16Array, UInt32Array, UInt64Array,
     UInt8Array,
 };
-use arrow::datatypes::{ArrowPrimitiveType, DataType, Int64Type, Schema, TimeUnit};
+use arrow::datatypes::{
+    ArrowPrimitiveType, DataType, Float64Type, Int64Type, Schema, TimeUnit, UInt32Type, UInt64Type,
+};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::{Flatten, Iterator};
 use std::marker::PhantomData;
+use std::net::Ipv4Addr;
 use std::slice;
 use std::sync::Arc;
 use std::vec;
@@ -126,25 +129,117 @@ impl Table {
 
     /// Returns the column's content of `event_id` in `row_events` for each `target_columns`
     #[must_use]
-    pub fn column_messages(
+    pub fn column_values(
         &self,
-        row_events: &[(usize, u64)], // row index, event_id
+        events: &[u64],
+        column_types: &Arc<Vec<ColumnType>>,
         target_columns: &[usize],
         flag: &ContentFlag,
     ) -> Vec<(usize, ColumnMessages)> {
-        let mut column_messages: Vec<(usize, ColumnMessages)> = Vec::new();
-        for colidx in target_columns {
-            let mut col_msg = ColumnMessages::default();
-            if let Some(column) = self.columns.get(*colidx) {
-                for (row_index, event_id) in row_events {
-                    if let Ok(Some(message)) = column.string_try_get(*row_index) {
-                        col_msg.add(*event_id, message, flag);
+        let selected = events
+            .iter()
+            .filter_map(|eventid| self.event_index(*eventid).map(|index| (*eventid, *index)))
+            .collect::<Vec<_>>();
+
+        let mut column_values: Vec<(usize, ColumnMessages)> = Vec::new();
+        for column_id in target_columns {
+            if let Some(column_type) = column_types.get(*column_id) {
+                let mut msg = ColumnMessages::default();
+                if let Some(column) = self.columns.get(*column_id) {
+                    for (eventid, index) in &selected {
+                        if let Some(value) =
+                            Self::column_value_to_string(column, *column_type, *index)
+                        {
+                            msg.add(*eventid, value.as_str(), flag);
+                        }
                     }
                 }
+                column_values.push((*column_id, msg));
             }
-            column_messages.push((*colidx, col_msg));
         }
-        column_messages
+        column_values
+    }
+
+    fn column_value_to_string(
+        column: &Column,
+        column_type: ColumnType,
+        index: usize,
+    ) -> Option<String> {
+        match column_type {
+            ColumnType::DateTime | ColumnType::Int64 => {
+                if let Ok(Some(value)) = column.primitive_try_get::<Int64Type>(index) {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            }
+            ColumnType::Enum => {
+                if let Ok(Some(value)) = column.primitive_try_get::<UInt64Type>(index) {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            }
+            ColumnType::Float64 => {
+                if let Ok(Some(value)) = column.primitive_try_get::<Float64Type>(index) {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            }
+            ColumnType::IpAddr => {
+                if let Ok(Some(value)) = column.primitive_try_get::<UInt32Type>(index) {
+                    Some(Ipv4Addr::from(value).to_string())
+                } else {
+                    None
+                }
+            }
+            ColumnType::Utf8 => {
+                if let Ok(Some(value)) = column.string_try_get(index) {
+                    Some(value.to_string())
+                } else {
+                    None
+                }
+            }
+            ColumnType::Binary => None,
+        }
+    }
+
+    /// Return columns content for the selected event
+    // * TODO: MERGE this function to column_values()
+    // * The number of `target_columns` elements == the number of vector element of return values
+    #[must_use]
+    pub fn column_raw_content(
+        &self,
+        events: &[u64],
+        column_types: &Arc<Vec<ColumnType>>,
+        target_columns: &[(usize, &str)],
+    ) -> HashMap<u64, Vec<Option<String>>> {
+        let selected = events
+            .iter()
+            .filter_map(|eventid| self.event_index(*eventid).map(|index| (*eventid, *index)))
+            .collect::<Vec<_>>();
+
+        let mut rst: HashMap<u64, Vec<Option<String>>> = HashMap::new();
+        for (column_id, _) in target_columns {
+            if let Some(column_type) = column_types.get(*column_id) {
+                if let Some(column) = self.columns.get(*column_id) {
+                    for (eventid, index) in &selected {
+                        let t = rst.entry(*eventid).or_insert_with(Vec::new);
+                        t.push(Self::column_value_to_string(column, *column_type, *index));
+                    }
+                } else {
+                    for values in rst.values_mut() {
+                        values.push(None);
+                    }
+                }
+            } else {
+                for values in rst.values_mut() {
+                    values.push(None);
+                }
+            }
+        }
+        rst
     }
 
     #[must_use]
@@ -909,6 +1004,109 @@ mod tests {
         assert_eq!(
             Element::Binary(b"111a qwer".to_vec()),
             *stat[6].n_largest_count.mode().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_column_raw_content() {
+        let schema = Schema::new(vec![
+            Field::new("ts", DataType::Timestamp(TimeUnit::Second, None), false),
+            Field::new("src_addr", DataType::UInt32, false),
+            Field::new("src_port", DataType::UInt64, false),
+            Field::new("uri", DataType::Binary, false),
+        ]);
+        let ts: Vec<i64> = vec![
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 10)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 2)
+                .and_hms(0, 0, 13)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 3)
+                .and_hms(0, 0, 15)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 4)
+                .and_hms(0, 0, 22)
+                .timestamp(),
+        ];
+        let src_addr: Vec<u32> = vec![
+            Ipv4Addr::new(127, 0, 0, 1).into(),
+            Ipv4Addr::new(127, 0, 0, 2).into(),
+            Ipv4Addr::new(127, 0, 0, 3).into(),
+            Ipv4Addr::new(127, 0, 0, 4).into(),
+        ];
+        let src_port: Vec<u64> = vec![1000, 2000, 3000, 4000];
+        let uri: Vec<_> = vec![
+            "/setup.cgi?next_file=netgear.cfg".to_string(),
+            "/index.php?s=/index/thinkapp/invokefunction".to_string(),
+            "/phpmyadmin/scripts/setup.php".to_string(),
+            "/?XDEBUG_SESSION_START=phpstorm".to_string(),
+        ];
+
+        let c_ts = Column::try_from_slice::<Int64Type>(&ts).unwrap();
+        let c_src_addr = Column::try_from_slice::<UInt32Type>(&src_addr).unwrap();
+        let c_src_port = Column::try_from_slice::<UInt64Type>(&src_port).unwrap();
+        let tmp_uri: Arc<dyn Array> = Arc::new(StringArray::from(uri));
+        let c_uri = Column::from(tmp_uri);
+
+        let c: Vec<Column> = vec![c_ts, c_src_addr, c_src_port, c_uri];
+        let mut event_ids = HashMap::new();
+        event_ids.insert(1001, 0);
+        event_ids.insert(1002, 1);
+        event_ids.insert(1003, 2);
+        event_ids.insert(1004, 3);
+        let table = Table::new(Arc::new(schema), c, event_ids).expect("invalid columns");
+        let column_types = Arc::new(vec![
+            ColumnType::DateTime,
+            ColumnType::IpAddr,
+            ColumnType::Enum,
+            ColumnType::Utf8,
+        ]);
+
+        let events = vec![1001_u64, 1002, 1003, 1004];
+        let target_columns = vec![
+            (0_usize, "ts"),
+            (1, "src_addr"),
+            (2, "src_port"),
+            (3, "uri"),
+        ];
+        let result = table.column_raw_content(&events, &column_types, &target_columns);
+        assert_eq!(result.len(), 4);
+        assert_eq!(
+            result.get(&1001),
+            Some(&vec![
+                Some("1577836810".to_string()),
+                Some("127.0.0.1".to_string()),
+                Some("1000".to_string()),
+                Some("/setup.cgi?next_file=netgear.cfg".to_string())
+            ])
+        );
+        assert_eq!(
+            result.get(&1002),
+            Some(&vec![
+                Some("1577923213".to_string()),
+                Some("127.0.0.2".to_string()),
+                Some("2000".to_string()),
+                Some("/index.php?s=/index/thinkapp/invokefunction".to_string())
+            ])
+        );
+        assert_eq!(
+            result.get(&1003),
+            Some(&vec![
+                Some("1578009615".to_string()),
+                Some("127.0.0.3".to_string()),
+                Some("3000".to_string()),
+                Some("/phpmyadmin/scripts/setup.php".to_string())
+            ])
+        );
+        assert_eq!(
+            result.get(&1004),
+            Some(&vec![
+                Some("1578096022".to_string()),
+                Some("127.0.0.4".to_string()),
+                Some("4000".to_string()),
+                Some("/?XDEBUG_SESSION_START=phpstorm".to_string())
+            ])
         );
     }
 }
