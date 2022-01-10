@@ -517,6 +517,8 @@ impl Column {
     ///
     /// Returns an error if the type parameter does not match with the type of
     /// this `Column`.
+    #[allow(clippy::iter_not_returning_iterator)]
+    // TODO: resolve this clippy warning
     pub fn iter<'a, T>(&'a self) -> Result<Flatten<vec::IntoIter<&'a T>>, TypeError>
     where
         T: Array + 'static,
