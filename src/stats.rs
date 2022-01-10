@@ -81,13 +81,13 @@ impl PartialOrd for GroupElement {
 }
 
 /// Statistical summary of data of the same type.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ColumnStatistics {
     pub description: Description,
     pub n_largest_count: NLargestCount,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Description {
     count: usize,
     mean: Option<f64>,
@@ -96,26 +96,26 @@ pub struct Description {
     max: Option<Element>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElementCount {
     pub value: Element,
     pub count: usize,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NLargestCount {
     number_of_elements: usize,
     top_n: Vec<ElementCount>,
     mode: Option<Element>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GroupElementCount {
     pub value: GroupElement,
     pub count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GroupCount {
     pub count_index: Option<usize>, // if None, count just rows. If Some, count values of the column.
     pub series: Vec<GroupElementCount>,
