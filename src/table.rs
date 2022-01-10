@@ -54,6 +54,7 @@ impl From<ColumnType> for DataType {
 }
 
 /// Structured data represented in a column-oriented form.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Table {
     schema: Arc<Schema>,
