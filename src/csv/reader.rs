@@ -448,9 +448,7 @@ pub fn infer_schema<R: Read>(reader: &mut BufReader<R>) -> Result<Schema, String
     let record = Record::from_buf(&mut csv_reader, reader).ok_or("no data available")?;
     let mut fields = Vec::new();
     for i in 0..record.ends.len() {
-        let data_type = record
-            .get(i)
-            .map_or(DataType::Utf8, |f| infer_field_type(f));
+        let data_type = record.get(i).map_or(DataType::Utf8, infer_field_type);
         fields.push(Field::new("", data_type, false));
     }
     Ok(Schema::new(fields))
