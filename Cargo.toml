@@ -20,7 +20,7 @@ codecov = { repository = "petabi/structured", service = "github" }
 js = ["arrow/js"]
 
 [dependencies]
-arrow = "5"
+arrow = "9"
 chrono = { version = "^0.4.9", features = ["serde"] }
 csv-core = "0.1"
 itertools = "0.10"
