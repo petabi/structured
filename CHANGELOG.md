@@ -8,7 +8,13 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-* Add labeling related code. Read the column data in `token` form or the `entire contents`.
+
+* Add labeling related code. Read the column data in `token` form or the `entire
+  contents`.
+
+### Changed
+
+* Updated arrow to version 12, which requires Rust 1.57 or newer.
 
 ## [0.7.0] - 2021-10-20
 
@@ -99,6 +105,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   column-oriented form.
 - Interface to read CSV data into `Table`.
 
+[Unreleased]: https://github.com/petabi/structured/compare/0.7.0...main
 [0.7.0]: https://github.com/petabi/structured/compare/0.6.1...0.7.0
 [0.6.1]: https://github.com/petabi/structured/compare/0.6.0...0.6.1
 [0.6.0]: https://github.com/petabi/structured/compare/0.5.1...0.6.0

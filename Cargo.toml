@@ -1,26 +1,24 @@
 [package]
 name = "structured"
 version = "0.7.0"
-description = "Data structures to handle large, structured data."
-homepage = "https://github.com/petabi/structured"
-repository = "https://github.com/petabi/structured"
-license = "Apache-2.0"
 authors = [
     "Min Kim <msk@dolbo.net>",
     "Min Shao <min.shao1988@gmail.com>",
     "Sehkone Kim <sehkone@petabi.com>",
 ]
-edition = "2018"
+edition = "2021"
+rust-version = "1.57"
+description = "Data structures to handle large, structured data."
+homepage = "https://github.com/petabi/structured"
+repository = "https://github.com/petabi/structured"
+license = "Apache-2.0"
 exclude = ["./github"]
 
 [badges]
 codecov = { repository = "petabi/structured", service = "github" }
 
-[features]
-js = ["arrow/js"]
-
 [dependencies]
-arrow = "5"
+arrow = "12"
 chrono = { version = "^0.4.9", features = ["serde"] }
 csv-core = "0.1"
 itertools = "0.10"
