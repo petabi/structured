@@ -106,7 +106,6 @@ impl Table {
     }
 
     /// Returns an `Iterator` for columns.
-    #[must_use]
     pub fn columns(&self) -> slice::Iter<Column> {
         self.columns.iter()
     }
