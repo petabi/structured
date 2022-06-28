@@ -30,7 +30,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Requires Rust 1.53 or later.
+* Requires Rust 1.53 or later.
 
 ## [0.6.1] - 2021-08-04
 
@@ -56,33 +56,34 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Requires Rust 1.52 or later.
-- No longer supports dimension limitation for `Enum` in `CSV`.
-- `Enum` field is converted into utf8 string instead of being further processed.
+* Requires Rust 1.52 or later.
+* No longer supports dimension limitation for `Enum` in `CSV`.
+* `Enum` field is converted into utf8 string instead of being further processed.
 
 ## [0.4.0] - 2021-03-07
 
 ### Changed
 
-- Requires Rust 1.46 or later.
-- Replaced `array::Array` with `Array` from Apache Arrow.
+* Requires Rust 1.46 or later.
+* Replaced `array::Array` with `Array` from Apache Arrow.
 
 ## [0.3.0] - 2021-02-18
 
 ### Changed
-- Requires Rust 1.42 or later.
-- Requires dashmap 4 or later.
+
+* Requires Rust 1.42 or later.
+* Requires dashmap 4 or later.
 
 ## [0.2.1] - 2020-08-26
 
 ### Added
 
-- `Table::count_group_by` gets `by_column`, `by_interval` and `count_columns`
+* `Table::count_group_by` gets `by_column`, `by_interval` and `count_columns`
   as arguments for generating series having counts of `count_columns` values
   in rows grouped by `by_column` with `by_interval`.
-- The series have values which sum each column of `count_columns`, so
+* The series have values which sum each column of `count_columns`, so
   the number of generated series is the same number of `count_columns`.
-- If one of count columns is the same as `by_column`, the series having
+* If one of count columns is the same as `by_column`, the series having
   the number of rows as values will be also generated and its `count_index`
   in the result will be `None`.
 
@@ -90,26 +91,26 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Mitigate lock contention in parsing dictionary-encoded fields.
-- `Description` is decomposed into `Description` and `NLargestCount`.
-- Change `Table::describe` with `Table::statistics` which returns
+* Mitigate lock contention in parsing dictionary-encoded fields.
+* `Description` is decomposed into `Description` and `NLargestCount`.
+* Change `Table::describe` with `Table::statistics` which returns
   a vector of `ColumnStatistics` having `Description` and `NLargestCount`.
-- Take time intervals and numbers of top N as arguments of the `statistics`
+* Take time intervals and numbers of top N as arguments of the `statistics`
   function.
 
 ## [0.1.1] - 2020-02-25
 
 ### Added
 
-- Interface to generate empty batch to `Reader`.
+* Interface to generate empty batch to `Reader`.
 
 ## [0.1.0] - 2020-02-13
 
 ### Added
 
-- DataFrame-like data structure (`Table`) to represent structured data in a
+* DataFrame-like data structure (`Table`) to represent structured data in a
   column-oriented form.
-- Interface to read CSV data into `Table`.
+* Interface to read CSV data into `Table`.
 
 [Unreleased]: https://github.com/petabi/structured/compare/0.8.0...main
 [0.8.0]: https://github.com/petabi/structured/compare/0.7.0...0.8.0
