@@ -227,7 +227,7 @@ impl FieldParser {
     }
 }
 
-impl<'a> fmt::Debug for FieldParser {
+impl fmt::Debug for FieldParser {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int64(_) => write!(f, "Int64"),

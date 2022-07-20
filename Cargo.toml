@@ -7,7 +7,7 @@ authors = [
     "Sehkone Kim <sehkone@petabi.com>",
 ]
 edition = "2021"
-rust-version = "1.58"
+rust-version = "1.59"
 description = "Data structures to handle large, structured data."
 homepage = "https://github.com/petabi/structured"
 repository = "https://github.com/petabi/structured"
@@ -18,7 +18,7 @@ exclude = ["./github"]
 codecov = { repository = "petabi/structured", service = "github" }
 
 [dependencies]
-arrow = "17"
+arrow = "18"
 chrono = { version = "^0.4.9", features = ["serde"] }
 csv-core = "0.1"
 itertools = "0.10"

@@ -189,7 +189,7 @@ fn extract_tokens(
             }
 
             if OPTION_REMOVE_HEXCODE
-                && s.chars().all(|c| c.is_digit(16))
+                && s.chars().all(|c| c.is_ascii_hexdigit())
                 && (*y - *x) >= OPTION_HEXCODE_MIN_LENGTH
             {
                 continue;
