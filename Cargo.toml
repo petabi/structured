@@ -33,5 +33,5 @@ serde_json = { version = "^1.0.13", features = ["preserve_order"] }
 thiserror = "1"
 
 [dev-dependencies]
-ahash = "0.7"
+ahash = "0.8"
 serde_test = "1.0"
