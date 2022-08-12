@@ -430,7 +430,7 @@ impl Column {
     {
         let mut builder = PrimitiveBuilder::<T>::new(slice.len());
         for s in slice {
-            builder.append_value(*s)?;
+            builder.append_value(*s);
         }
         let array: Arc<dyn Array> = Arc::new(builder.finish());
         Ok(array.into())

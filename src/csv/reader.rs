@@ -358,14 +358,14 @@ where
                         builder.append_value(
                             std::str::from_utf8(row.get(i).unwrap_or_default())
                                 .map_err(|e| ArrowError::ParseError(e.to_string()))?,
-                        )?;
+                        );
                     }
                     Arc::new(builder.finish())
                 }
                 FieldParser::Binary => {
                     let mut builder = BinaryBuilder::new(rows.len());
                     for row in &rows {
-                        builder.append_value(row.get(i).unwrap_or_default())?;
+                        builder.append_value(row.get(i).unwrap_or_default());
                     }
                     Arc::new(builder.finish())
                 }
@@ -413,11 +413,9 @@ where
         match row.get(col_idx) {
             Some(s) if !s.is_empty() => {
                 let t = parse(s).unwrap_or_default();
-                builder.append_value(t).expect("never fails");
+                builder.append_value(t);
             }
-            _ => builder
-                .append_value(T::Native::default())
-                .expect("never fails"),
+            _ => builder.append_value(T::Native::default()),
         }
     }
     Arc::new(builder.finish())
