@@ -26,7 +26,7 @@ use crate::token::{ColumnMessages, ContentFlag};
 
 type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
 /// The data type of a table column.
-#[derive(Clone, Copy, Debug, Deserialize, EnumString, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, EnumString, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "snake_case")]
 pub enum ColumnType {
@@ -682,7 +682,7 @@ pub trait ArrayType {
     type Elem;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct TypeError();
 
 pub struct PrimitiveIter<'a, 'b, T: ArrowPrimitiveType> {

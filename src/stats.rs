@@ -109,13 +109,13 @@ pub struct NLargestCount {
     mode: Option<Element>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GroupElementCount {
     pub value: GroupElement,
     pub count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GroupCount {
     pub count_index: Option<usize>, // if None, count just rows. If Some, count values of the column.
     pub series: Vec<GroupElementCount>,

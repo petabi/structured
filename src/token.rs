@@ -17,7 +17,7 @@ const RX_URL_ENCODED: &str = r#"%[0-9A-Fa-f]{2}"#;
 const TOKEN_CHARS: [char; 4] = ['.', '_', '-', '@'];
 type EventId = u64;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum ContentKind {
     Token(bool),
     Full(bool),
