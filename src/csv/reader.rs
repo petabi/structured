@@ -280,6 +280,12 @@ impl From<Config> for csv_core::ReaderBuilder {
     }
 }
 
+impl Config {
+    #[must_use]
+    pub fn delimiter(&self) -> u8 {
+        self.delimiter
+    }
+}
 /// CSV reader
 pub struct Reader<'a, I>
 where
