@@ -12,6 +12,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Updated arrow to version 23.
 - Requires Rust 1.62 or newer.
 
+### Removed
+
+- Remove labeling related code.
+
 ## [0.8.0] - 2022-05-02
 
 ### Added
