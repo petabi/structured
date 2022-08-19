@@ -3,15 +3,12 @@ use arrow::array::{
     PrimitiveArray, PrimitiveBuilder, StringArray, UInt16Array, UInt32Array, UInt64Array,
     UInt8Array,
 };
-use arrow::datatypes::{
-    ArrowPrimitiveType, DataType, Float64Type, Int64Type, Schema, TimeUnit, UInt32Type, UInt64Type,
-};
+use arrow::datatypes::{ArrowPrimitiveType, DataType, Int64Type, Schema, TimeUnit};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::iter::{Flatten, Iterator};
 use std::marker::PhantomData;
-use std::net::Ipv4Addr;
 use std::slice;
 use std::sync::Arc;
 use std::vec;
@@ -22,7 +19,7 @@ use crate::stats::{
     n_largest_count_enum, n_largest_count_float64, ColumnStatistics, Element, GroupCount,
     GroupElement, GroupElementCount, NLargestCount,
 };
-use crate::token::{ColumnMessages, ContentFlag};
+use crate::token::{column_value_to_string, ColumnMessages, ContentFlag};
 
 type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
 /// The data type of a table column.
@@ -147,10 +144,9 @@ impl Table {
                 let mut msg = ColumnMessages::default();
                 if let Some(column) = self.columns.get(*column_id) {
                     for (eventid, index) in &selected {
-                        if let Some(value) =
-                            Self::column_value_to_string(column, *column_type, *index)
+                        if let Some(message) = column_value_to_string(column, *column_type, *index)
                         {
-                            msg.add(*eventid, value.as_str(), flag);
+                            msg.add(*eventid, &message, flag);
                         }
                     }
                 }
@@ -158,51 +154,6 @@ impl Table {
             }
         }
         column_values
-    }
-
-    fn column_value_to_string(
-        column: &Column,
-        column_type: ColumnType,
-        index: usize,
-    ) -> Option<String> {
-        match column_type {
-            ColumnType::DateTime | ColumnType::Int64 => {
-                if let Ok(Some(value)) = column.primitive_try_get::<Int64Type>(index) {
-                    Some(value.to_string())
-                } else {
-                    None
-                }
-            }
-            ColumnType::Enum => {
-                if let Ok(Some(value)) = column.primitive_try_get::<UInt64Type>(index) {
-                    Some(value.to_string())
-                } else {
-                    None
-                }
-            }
-            ColumnType::Float64 => {
-                if let Ok(Some(value)) = column.primitive_try_get::<Float64Type>(index) {
-                    Some(value.to_string())
-                } else {
-                    None
-                }
-            }
-            ColumnType::IpAddr => {
-                if let Ok(Some(value)) = column.primitive_try_get::<UInt32Type>(index) {
-                    Some(Ipv4Addr::from(value).to_string())
-                } else {
-                    None
-                }
-            }
-            ColumnType::Utf8 => {
-                if let Ok(Some(value)) = column.string_try_get(index) {
-                    Some(value.to_string())
-                } else {
-                    None
-                }
-            }
-            ColumnType::Binary => None,
-        }
     }
 
     /// Return columns content for the selected event
@@ -226,7 +177,7 @@ impl Table {
                 if let Some(column) = self.columns.get(*column_id) {
                     for (eventid, index) in &selected {
                         let t = rst.entry(*eventid).or_insert_with(Vec::new);
-                        t.push(Self::column_value_to_string(column, *column_type, *index));
+                        t.push(column_value_to_string(column, *column_type, *index));
                     }
                 } else {
                     for values in rst.values_mut() {
@@ -440,7 +391,12 @@ impl Column {
         self.len
     }
 
-    fn primitive_try_get<T>(&self, index: usize) -> Result<Option<T::Native>, TypeError>
+    /// Return the value specified by the index as type T
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if it's fail to convert the value to the specified type
+    pub fn primitive_try_get<T>(&self, index: usize) -> Result<Option<T::Native>, TypeError>
     where
         T: ArrowPrimitiveType,
     {
@@ -462,7 +418,12 @@ impl Column {
         Ok(Some(typed_arr.value(inner_index)))
     }
 
-    fn binary_try_get(&self, index: usize) -> Result<Option<&[u8]>, TypeError> {
+    /// Return the value specified by the index as byte array
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if it's fail to convert the value to byte array
+    pub fn binary_try_get(&self, index: usize) -> Result<Option<&[u8]>, TypeError> {
         if index >= self.len() {
             return Ok(None);
         }
@@ -481,7 +442,12 @@ impl Column {
         Ok(Some(typed_arr.value(inner_index)))
     }
 
-    fn string_try_get(&self, index: usize) -> Result<Option<&str>, TypeError> {
+    /// Return the value specified by the index as string
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if it's fail to convert the value to string
+    pub fn string_try_get(&self, index: usize) -> Result<Option<&str>, TypeError> {
         if index >= self.len() {
             return Ok(None);
         }
@@ -771,6 +737,7 @@ impl<'a, 'b> Iterator for StringIter<'a, 'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::token::ContentKind;
     use crate::Column;
     use ahash::AHasher;
     use arrow::datatypes::{Field, Float64Type, UInt32Type, UInt64Type};
@@ -1014,7 +981,7 @@ mod tests {
         let schema = Schema::new(vec![
             Field::new("ts", DataType::Timestamp(TimeUnit::Second, None), false),
             Field::new("src_addr", DataType::UInt32, false),
-            Field::new("src_port", DataType::UInt64, false),
+            Field::new("src_port", DataType::Utf8, false),
             Field::new("uri", DataType::Binary, false),
         ]);
         let ts: Vec<i64> = vec![
@@ -1037,7 +1004,12 @@ mod tests {
             Ipv4Addr::new(127, 0, 0, 3).into(),
             Ipv4Addr::new(127, 0, 0, 4).into(),
         ];
-        let src_port: Vec<u64> = vec![1000, 2000, 3000, 4000];
+        let src_port: Vec<String> = vec![
+            "1000".to_string(),
+            "2000".to_string(),
+            "3000".to_string(),
+            "4000".to_string(),
+        ];
         let uri: Vec<_> = vec![
             "/setup.cgi?next_file=netgear.cfg".to_string(),
             "/index.php?s=/index/thinkapp/invokefunction".to_string(),
@@ -1047,7 +1019,8 @@ mod tests {
 
         let c_ts = Column::try_from_slice::<Int64Type>(&ts).unwrap();
         let c_src_addr = Column::try_from_slice::<UInt32Type>(&src_addr).unwrap();
-        let c_src_port = Column::try_from_slice::<UInt64Type>(&src_port).unwrap();
+        let tmp_src_ports: Arc<dyn Array> = Arc::new(StringArray::from(src_port));
+        let c_src_port = Column::from(tmp_src_ports);
         let tmp_uri: Arc<dyn Array> = Arc::new(StringArray::from(uri));
         let c_uri = Column::from(tmp_uri);
 
@@ -1062,7 +1035,7 @@ mod tests {
             ColumnType::DateTime,
             ColumnType::IpAddr,
             ColumnType::Enum,
-            ColumnType::Utf8,
+            ColumnType::Binary,
         ]);
 
         let events = vec![1001_u64, 1002, 1003, 1004];
@@ -1110,5 +1083,111 @@ mod tests {
                 Some("/?XDEBUG_SESSION_START=phpstorm".to_string())
             ])
         );
+    }
+
+    #[test]
+    fn test_column_values() {
+        let schema = Schema::new(vec![
+            Field::new("ts", DataType::Timestamp(TimeUnit::Second, None), false),
+            Field::new("src_addr", DataType::UInt32, false),
+            Field::new("uri", DataType::Binary, false),
+        ]);
+        let ts: Vec<i64> = vec![
+            NaiveDate::from_ymd(2020, 1, 1)
+                .and_hms(0, 0, 10)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 2)
+                .and_hms(0, 0, 13)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 3)
+                .and_hms(0, 0, 15)
+                .timestamp(),
+            NaiveDate::from_ymd(2020, 1, 4)
+                .and_hms(0, 0, 22)
+                .timestamp(),
+        ];
+        let src_addr: Vec<u32> = vec![
+            Ipv4Addr::new(127, 0, 0, 1).into(),
+            Ipv4Addr::new(127, 0, 0, 2).into(),
+            Ipv4Addr::new(127, 0, 0, 3).into(),
+            Ipv4Addr::new(127, 0, 0, 4).into(),
+        ];
+        let uri: Vec<_> = vec![
+            "/PHPMYADMIN/s?SCRIPTS=netgear.CFG".to_string(),
+            "/index.php?s=/index/thinkapp/invokefunction".to_string(),
+            "/phpmyadmin/scripts/netgear.cfg".to_string(),
+            "/?XDEBUG_SESSION_START=phpstorm".to_string(),
+        ];
+
+        let c_ts = Column::try_from_slice::<Int64Type>(&ts).unwrap();
+        let c_src_addr = Column::try_from_slice::<UInt32Type>(&src_addr).unwrap();
+        let tmp_uri: Arc<dyn Array> = Arc::new(StringArray::from(uri));
+        let c_uri = Column::from(tmp_uri);
+
+        let c: Vec<Column> = vec![c_ts, c_src_addr, c_uri];
+        let mut event_ids = HashMap::new();
+        event_ids.insert(1001, 0);
+        event_ids.insert(1002, 1);
+        event_ids.insert(1003, 2);
+        event_ids.insert(1004, 3);
+        let table = Table::new(Arc::new(schema), c, event_ids).expect("invalid columns");
+        let column_types = Arc::new(vec![
+            ColumnType::DateTime,
+            ColumnType::IpAddr,
+            ColumnType::Binary,
+        ]);
+
+        let events = vec![1001_u64, 1002, 1003, 1004];
+        let target_columns = vec![1, 2];
+        let mut flag = ContentFlag::default();
+        flag.set(ContentKind::Token(true));
+        flag.set(ContentKind::Full(true));
+        assert_eq!(flag.token(), true);
+        let result = table.column_values(&events, &column_types, &target_columns, &flag);
+        assert_eq!(result.len(), 2);
+
+        assert_eq!(result.get(0).is_some(), true);
+        if let Some((column_id, cm)) = result.get(0) {
+            assert_eq!(*column_id, 1);
+            assert_eq!(cm.event_maps.is_some(), true);
+            if let Some(event_maps) = &cm.event_maps {
+                assert_eq!(event_maps.get("127.0.0.1"), Some(&vec![1001]));
+                assert_eq!(event_maps.get("127.0.0.2"), Some(&vec![1002]));
+                assert_eq!(event_maps.get("127.0.0.3"), Some(&vec![1003]));
+                assert_eq!(event_maps.get("127.0.0.4"), Some(&vec![1004]));
+            }
+        }
+
+        assert_eq!(result.get(1).is_some(), true);
+        if let Some((column_id, cm)) = result.get(1) {
+            assert_eq!(*column_id, 2);
+            assert_eq!(cm.token_maps.is_some(), true);
+            if let Some(token_maps) = &cm.token_maps {
+                assert_eq!(
+                    token_maps.get(&vec![
+                        "phpmyadmin".to_string(),
+                        "scripts".to_string(),
+                        "netgear.cfg".to_string(),
+                    ]),
+                    Some(&vec![1001, 1003])
+                );
+                assert_eq!(
+                    token_maps.get(&vec![
+                        "index.php".to_string(),
+                        "index".to_string(),
+                        "thinkapp".to_string(),
+                        "invokefunction".to_string()
+                    ]),
+                    Some(&vec![1002])
+                );
+                assert_eq!(
+                    token_maps.get(&vec![
+                        "xdebug_session_start".to_string(),
+                        "phpstorm".to_string()
+                    ]),
+                    Some(&vec![1004])
+                );
+            }
+        }
     }
 }

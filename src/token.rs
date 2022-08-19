@@ -1,6 +1,8 @@
+use crate::{Column, ColumnType};
+use arrow::datatypes::{Float64Type, Int64Type, UInt32Type};
 use percent_encoding::percent_decode_str;
 use regex::Regex;
-use std::collections::HashMap;
+use std::{collections::HashMap, net::Ipv4Addr};
 
 const OPTION_TOKEN_MIN_LENGTH: usize = 2;
 const OPTION_URL_DECODE: bool = false;
@@ -64,12 +66,6 @@ pub struct ColumnMessages {
 }
 
 impl ColumnMessages {
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.token_maps.as_ref().map_or(true, HashMap::is_empty)
-            || self.event_maps.as_ref().map_or(true, HashMap::is_empty)
-    }
-
     pub fn add(&mut self, event_id: u64, message: &str, flag: &ContentFlag) {
         if flag.token() {
             if let Some(tokens) = tokenize_message(message) {
@@ -107,6 +103,53 @@ pub fn tokenize_message(message: &str) -> Option<Vec<String>> {
     }
 
     extract_tokens(&contents, &TOKEN_CHARS, OPTION_TOKEN_MIN_LENGTH)
+}
+
+#[must_use]
+pub fn column_value_to_string(
+    column: &Column,
+    column_type: ColumnType,
+    index: usize,
+) -> Option<String> {
+    match column_type {
+        ColumnType::DateTime | ColumnType::Int64 => {
+            if let Ok(Some(value)) = column.primitive_try_get::<Int64Type>(index) {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        }
+        ColumnType::Float64 => {
+            if let Ok(Some(value)) = column.primitive_try_get::<Float64Type>(index) {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        }
+        ColumnType::IpAddr => {
+            if let Ok(Some(value)) = column.primitive_try_get::<UInt32Type>(index) {
+                Some(Ipv4Addr::from(value).to_string())
+            } else {
+                None
+            }
+        }
+        ColumnType::Enum | ColumnType::Utf8 => {
+            if let Ok(Some(value)) = column.string_try_get(index) {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        }
+        ColumnType::Binary => {
+            if let Ok(Some(value)) = column.binary_try_get(index) {
+                Some(String::from_utf8_lossy(value).to_string())
+            } else if let Ok(Some(value)) = column.string_try_get(index) {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        }
+    }
 }
 
 #[must_use]
@@ -211,6 +254,10 @@ fn extract_tokens(
 
 #[cfg(test)]
 mod tests {
+    use arrow::array::{Array, StringArray};
+    use chrono::NaiveDate;
+    use std::sync::Arc;
+
     use super::*;
 
     #[test]
@@ -249,8 +296,6 @@ mod tests {
     #[test]
     fn test_column_messages() {
         let mut column_messages = ColumnMessages::default();
-        assert_eq!(column_messages.is_empty(), true);
-
         let mut flag = ContentFlag::default();
         flag.set(ContentKind::Full(true));
 
@@ -276,5 +321,75 @@ mod tests {
                 .get(&vec!["cgi-bin".to_string(), "nph-wsget20.exe".to_string()]),
             Some(&vec![100_u64])
         );
+    }
+
+    #[test]
+    fn test_column_value_to_string() {
+        let ts: Vec<i64> = vec![NaiveDate::from_ymd(2020, 1, 1)
+            .and_hms(0, 0, 10)
+            .timestamp()];
+        let cts = Column::try_from_slice::<Int64Type>(&ts).unwrap();
+        assert_eq!(
+            column_value_to_string(&cts, ColumnType::DateTime, 0),
+            Some("1577836810".to_string())
+        );
+        assert_eq!(column_value_to_string(&cts, ColumnType::Utf8, 0), None);
+
+        let src_addr: Vec<u32> = vec![Ipv4Addr::new(127, 0, 0, 1).into()];
+        let csrc_addr = Column::try_from_slice::<UInt32Type>(&src_addr).unwrap();
+        assert_eq!(
+            column_value_to_string(&csrc_addr, ColumnType::IpAddr, 0),
+            Some("127.0.0.1".to_string())
+        );
+        assert_eq!(
+            column_value_to_string(&csrc_addr, ColumnType::Enum, 0),
+            None
+        );
+
+        let uri: Vec<_> = vec!["/PHPMYADMIN/s?SCRIPTS=netgear.CFG".to_string()];
+        let uri: Arc<dyn Array> = Arc::new(StringArray::from(uri));
+        let curi = Column::from(uri);
+        assert_eq!(
+            column_value_to_string(&curi, ColumnType::Binary, 0),
+            Some("/PHPMYADMIN/s?SCRIPTS=netgear.CFG".to_string())
+        );
+        assert_eq!(column_value_to_string(&curi, ColumnType::Int64, 0), None);
+
+        let user_agent = vec!["200".to_string()];
+        let tmp_user_agent: Arc<dyn Array> = Arc::new(StringArray::from(user_agent));
+        let cuser_agent = Column::from(tmp_user_agent);
+        assert_eq!(
+            column_value_to_string(&cuser_agent, ColumnType::Utf8, 0),
+            Some("200".to_string())
+        );
+        assert_eq!(
+            column_value_to_string(&cuser_agent, ColumnType::Int64, 0),
+            None
+        );
+
+        let status = vec!["http".to_string()];
+        let tmp_status: Arc<dyn Array> = Arc::new(StringArray::from(status));
+        let cstatus = Column::from(tmp_status);
+        assert_eq!(
+            column_value_to_string(&cstatus, ColumnType::Enum, 0),
+            Some("http".to_string())
+        );
+        assert_eq!(column_value_to_string(&cstatus, ColumnType::Int64, 0), None);
+
+        let score = vec![0.67_f64];
+        let cscore = Column::try_from_slice::<Float64Type>(&score).unwrap();
+        assert_eq!(
+            column_value_to_string(&cscore, ColumnType::Float64, 0),
+            Some("0.67".to_string())
+        );
+        assert_eq!(column_value_to_string(&cscore, ColumnType::Enum, 0), None);
+
+        let size = vec![1000_i64];
+        let csize = Column::try_from_slice::<Int64Type>(&size).unwrap();
+        assert_eq!(
+            column_value_to_string(&csize, ColumnType::Int64, 0),
+            Some("1000".to_string())
+        );
+        assert_eq!(column_value_to_string(&csize, ColumnType::Enum, 0), None);
     }
 }
