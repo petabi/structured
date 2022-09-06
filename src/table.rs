@@ -428,7 +428,7 @@ impl Column {
     where
         T: ArrowPrimitiveType,
     {
-        let mut builder = PrimitiveBuilder::<T>::new(slice.len());
+        let mut builder = PrimitiveBuilder::<T>::new();
         for s in slice {
             builder.append_value(*s);
         }

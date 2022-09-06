@@ -353,7 +353,7 @@ where
                     build_primitive_array::<Float64Type, Float64Parser>(&rows, i, parse)
                 }
                 FieldParser::Utf8 => {
-                    let mut builder = StringBuilder::new(rows.len());
+                    let mut builder = StringBuilder::new();
                     for row in &rows {
                         builder.append_value(
                             std::str::from_utf8(row.get(i).unwrap_or_default())
@@ -363,7 +363,7 @@ where
                     Arc::new(builder.finish())
                 }
                 FieldParser::Binary => {
-                    let mut builder = BinaryBuilder::new(rows.len());
+                    let mut builder = BinaryBuilder::new();
                     for row in &rows {
                         builder.append_value(row.get(i).unwrap_or_default());
                     }
@@ -385,15 +385,15 @@ where
             .map(|parser| -> Arc<dyn Array> {
                 match parser {
                     FieldParser::Int64(_) | FieldParser::Timestamp(_) => {
-                        Arc::new(PrimitiveBuilder::<Int64Type>::new(0).finish())
+                        Arc::new(PrimitiveBuilder::<Int64Type>::new().finish())
                     }
                     FieldParser::Float64(_) => {
-                        Arc::new(PrimitiveBuilder::<Float64Type>::new(0).finish())
+                        Arc::new(PrimitiveBuilder::<Float64Type>::new().finish())
                     }
-                    FieldParser::Utf8 => Arc::new(StringBuilder::new(0).finish()),
-                    FieldParser::Binary => Arc::new(BinaryBuilder::new(0).finish()),
+                    FieldParser::Utf8 => Arc::new(StringBuilder::new().finish()),
+                    FieldParser::Binary => Arc::new(BinaryBuilder::new().finish()),
                     FieldParser::UInt32(_) => {
-                        Arc::new(PrimitiveBuilder::<UInt32Type>::new(0).finish())
+                        Arc::new(PrimitiveBuilder::<UInt32Type>::new().finish())
                     }
                 }
             })
@@ -408,7 +408,7 @@ where
     T::Native: Default,
     P: Fn(&[u8]) -> Result<T::Native, ParseError> + Send + Sync + ?Sized,
 {
-    let mut builder = PrimitiveBuilder::<T>::new(rows.len());
+    let mut builder = PrimitiveBuilder::<T>::new();
     for row in rows {
         match row.get(col_idx) {
             Some(s) if !s.is_empty() => {
