@@ -518,6 +518,9 @@ pub(crate) fn n_largest_count_datetime(
     n_largest_count
 }
 
+/// # Panics
+///
+/// If `rows` contains an invalid timestamp in nanoseconds.
 #[must_use]
 pub(crate) fn convert_time_intervals(
     column: &Column,
@@ -545,7 +548,7 @@ pub(crate) fn convert_time_intervals(
             // The first interval of each day should start with 00:00:00.
             let mut ts = v / (24 * 60 * 60) * (24 * 60 * 60);
             ts += (v - ts) / time_interval * time_interval;
-            NaiveDateTime::from_timestamp(ts, 0)
+            NaiveDateTime::from_timestamp_opt(ts, 0).unwrap()
         })
         .collect::<Vec<_>>()
 }

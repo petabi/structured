@@ -482,13 +482,34 @@ mod tests {
         ];
         let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
         let c4_v: Vec<NaiveDateTime> = vec![
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 15, 11),
-            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 21).and_hms(20, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(6, 45, 11),
-            NaiveDate::from_ymd(2019, 9, 21).and_hms(8, 10, 11),
-            NaiveDate::from_ymd(2019, 9, 22).and_hms(9, 10, 11),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(6, 10, 11)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(6, 15, 11)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 21)
+                .unwrap()
+                .and_hms_opt(20, 10, 11)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 21)
+                .unwrap()
+                .and_hms_opt(20, 10, 11)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(6, 45, 11)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 21)
+                .unwrap()
+                .and_hms_opt(8, 10, 11)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(9, 10, 11)
+                .unwrap(),
         ];
 
         let fields = vec!["t1", "t2", "t3"];
