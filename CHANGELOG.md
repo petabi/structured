@@ -7,7 +7,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Updated arrow to verion 29.
+- Updated arrow to verion 30.
 
 ## [0.9.0] - 2022-10-17
 
