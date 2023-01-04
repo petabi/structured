@@ -49,11 +49,11 @@ pub struct FloatRange {
 impl fmt::Display for Element {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Int(x) => write!(f, "{}", x),
-            Self::UInt(x) => write!(f, "{}", x),
-            Self::Enum(x) | Self::Text(x) => write!(f, "{}", x),
-            Self::Binary(x) => write!(f, "{:#?}", x),
-            Self::Float(x) => write!(f, "{}", x),
+            Self::Int(x) => write!(f, "{x}"),
+            Self::UInt(x) => write!(f, "{x}"),
+            Self::Enum(x) | Self::Text(x) => write!(f, "{x}"),
+            Self::Binary(x) => write!(f, "{x:#?}"),
+            Self::Float(x) => write!(f, "{x}"),
             Self::FloatRange(x) => {
                 if x.smallest == 0.0_f64 && x.largest == 0.0_f64 {
                     write!(f, "0")
@@ -61,8 +61,8 @@ impl fmt::Display for Element {
                     write!(f, "{:.3}~{:.3}", x.smallest, x.largest)
                 }
             }
-            Self::IpAddr(x) => write!(f, "{}", x),
-            Self::DateTime(x) => write!(f, "{}", x),
+            Self::IpAddr(x) => write!(f, "{x}"),
+            Self::DateTime(x) => write!(f, "{x}"),
         }
     }
 }
