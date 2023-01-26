@@ -527,6 +527,7 @@ pub(crate) fn convert_time_intervals(
     rows: &[usize],
     time_interval: u32,
 ) -> Vec<NaiveDateTime> {
+    const A_BILLION: i64 = 1_000_000_000;
     let time_interval = if time_interval > MAX_TIME_INTERVAL {
         MAX_TIME_INTERVAL
     // Users want to see time series of the same order intervals within MAX_TIME_INTERVAL which is in date units.
@@ -546,9 +547,9 @@ pub(crate) fn convert_time_intervals(
         .unwrap()
         .map(|v| {
             // The first interval of each day should start with 00:00:00.
-            let mut ts = v / (24 * 60 * 60) * (24 * 60 * 60);
+            let mut ts = v / ((24 * 60 * 60) * (24 * 60 * 60) * A_BILLION);
             ts += (v - ts) / time_interval * time_interval;
-            NaiveDateTime::from_timestamp_opt(ts, 0).unwrap()
+            NaiveDateTime::from_timestamp_opt(ts, 0).unwrap_or_default()
         })
         .collect::<Vec<_>>()
 }

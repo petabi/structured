@@ -7,7 +7,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
 - Updated arrow to verion 32.
+- Use timestamp with nano seconds instead of timestamp with only seconds value.
 
 ## [0.9.0] - 2022-10-17
 
