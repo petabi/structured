@@ -252,7 +252,7 @@ where
 fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
     Ok(
         chrono::NaiveDateTime::parse_from_str(str::from_utf8(v)?, "%Y-%m-%dT%H:%M:%S%.f%:z")?
-            .timestamp(),
+            .timestamp_nanos(),
     )
 }
 
