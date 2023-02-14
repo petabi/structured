@@ -5,11 +5,16 @@ file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.10.1] - 2022-02-14
 
 ### Changed
 
 - Updated arrow to version 33.
+
+### Security
+
+- Avoid chrono default feature that might casue SEGFAULT, according to
+  [RUSTSEC-2020-0071](https://rustsec.org/advisories/RUSTSEC-2020-0071)
 
 ## [0.10.0] - 2022-02-03
 
@@ -130,7 +135,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   column-oriented form.
 - Interface to read CSV data into `Table`.
 
-[Unreleased]: https://github.com/petabi/structured/compare/0.10.0...main
+[0.10.1]: https://github.com/petabi/structured/compare/0.10.0...0.10.1
 [0.10.0]: https://github.com/petabi/structured/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/petabi/structured/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/petabi/structured/compare/0.7.0...0.8.0
