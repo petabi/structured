@@ -5,6 +5,12 @@ file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Updated arrow to version 33.
+
 ## [0.10.0] - 2022-02-03
 
 ### Changed
@@ -124,6 +130,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   column-oriented form.
 - Interface to read CSV data into `Table`.
 
+[Unreleased]: https://github.com/petabi/structured/compare/0.10.0...main
 [0.10.0]: https://github.com/petabi/structured/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/petabi/structured/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/petabi/structured/compare/0.7.0...0.8.0
