@@ -11,7 +11,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::str::{self, FromStr};
 use std::sync::Arc;
 
-struct Record {
+pub struct Record {
     fields: Vec<u8>,
     ends: Vec<usize>,
 }
@@ -103,6 +103,15 @@ impl Record {
             Some(&start) => start,
         };
         Some(&self.fields[start..end])
+    }
+
+    #[must_use]
+    pub fn fields(&self) -> Vec<&[u8]> {
+        std::iter::once(&0)
+            .chain(self.ends.iter())
+            .zip(self.ends.iter())
+            .map(|(&start, &end)| &self.fields[start..end])
+            .collect()
     }
 }
 
@@ -578,6 +587,16 @@ mod tests {
         let c6 = Column::from(c6_a);
         let columns: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
         (data, columns)
+    }
+
+    #[test]
+    fn fields() {
+        let input = b"Cat,50,1.0,1990-11-28T12:00:09.0-07:00";
+        let builder = csv_core::ReaderBuilder::default();
+        let mut reader = builder.build();
+        let record = Record::new(&mut reader, input).unwrap();
+        let fields = record.fields();
+        assert_eq!(fields.len(), 4);
     }
 
     #[test]
