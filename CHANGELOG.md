@@ -5,6 +5,15 @@ file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `top_n_f64` shows the most frequently appeared `f64` ( with given precision,
+  default to 0.01).
+- Add `precision` as argument for `statistics` so that user can specify the
+  precision for `top_n` statistics calculation of `f64` columns.
+
 ## [0.10.2] - 2023-02-27
 
 ### Added
@@ -141,6 +150,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   column-oriented form.
 - Interface to read CSV data into `Table`.
 
+[Unreleased]: https://github.com/petabi/structured/compare/0.10.2...main
 [0.10.2]: https://github.com/petabi/structured/compare/0.10.1...0.10.2
 [0.10.1]: https://github.com/petabi/structured/compare/0.10.0...0.10.1
 [0.10.0]: https://github.com/petabi/structured/compare/0.9.0...0.10.0

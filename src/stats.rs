@@ -8,11 +8,9 @@ use std::fmt;
 use std::hash::Hash;
 use std::iter::Iterator;
 use std::net::{IpAddr, Ipv4Addr};
-use std::vec;
 
 use crate::table::{Column, ColumnType};
 
-const NUM_OF_FLOAT_INTERVALS: usize = 100;
 const MAX_TIME_INTERVAL: u32 = 86_400; // one day in seconds
 const MIN_TIME_INTERVAL: u32 = 30; // seconds
 
@@ -482,13 +480,12 @@ pub(crate) fn n_largest_count_float64(
     column: &Column,
     rows: &[usize],
     number_of_top_n: u32,
-    min: f64,
-    max: f64,
+    precision: i32,
 ) -> NLargestCount {
     let mut n_largest_count = NLargestCount::default();
 
     let iter = column.primitive_iter::<Float64Type>(rows).unwrap();
-    let (rc, rt) = top_n_f64(iter, min, max, number_of_top_n);
+    let (rc, rt) = top_n_f64(iter, 10.0_f64.powi(precision), number_of_top_n);
     n_largest_count.number_of_elements = rc;
     n_largest_count.mode = Some(rt[0].value.clone());
     n_largest_count.top_n = rt;
@@ -572,55 +569,35 @@ where
     top_n
 }
 
-fn top_n_f64<I>(iter: I, min: f64, max: f64, number_of_top_n: u32) -> (usize, Vec<ElementCount>)
+fn top_n_f64<I>(iter: I, precision: f64, number_of_top_n: u32) -> (usize, Vec<ElementCount>)
 where
     I: Iterator<Item = f64>,
 {
-    let interval: f64 = (max - min) / NUM_OF_FLOAT_INTERVALS.to_f64().expect("<= 100");
-    let mut count: Vec<(usize, usize)> = vec![(0, 0); NUM_OF_FLOAT_INTERVALS];
+    use ordered_float::OrderedFloat;
 
-    for (i, item) in count.iter_mut().enumerate().take(NUM_OF_FLOAT_INTERVALS) {
-        item.0 = i;
-    }
+    let mut freqs: Vec<(_, usize)> = iter
+        .map(|v| OrderedFloat((v * precision).round() / precision))
+        .fold(HashMap::new(), |mut freqs, v| {
+            let e = freqs.entry(v).or_default();
+            *e += 1;
+            freqs
+        })
+        .into_iter()
+        .collect();
 
-    for v in iter {
-        let mut slot = if interval == 0.0_f64 {
-            0_usize
-        } else {
-            ((v - min) / interval).floor().to_usize().expect("< 100")
-        };
-        if slot == NUM_OF_FLOAT_INTERVALS {
-            slot = NUM_OF_FLOAT_INTERVALS - 1;
-        }
-        count[slot].1 += 1;
-    }
+    freqs.sort_unstable_by(|a, b| b.1.cmp(&a.1));
 
-    count.retain(|&c| c.1 > 0);
-
-    count.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-
-    let mut top_n: Vec<ElementCount> = Vec::new();
-
-    let number_of_top_n = number_of_top_n.to_usize().expect("safe: u32 -> usize");
-    let num_top_n = if number_of_top_n > count.len() {
-        count.len()
-    } else {
-        number_of_top_n
-    };
-
-    for item in count.iter().take(num_top_n) {
-        if item.1 == 0 {
-            break;
-        }
-        top_n.push(ElementCount {
-            value: Element::FloatRange(FloatRange {
-                smallest: min + (item.0).to_f64().expect("< 30") * interval,
-                largest: min + (item.0 + 1).to_f64().expect("<= 30") * interval,
-            }),
-            count: item.1,
-        });
-    }
-    (count.len(), top_n)
+    (
+        freqs.len(),
+        freqs
+            .into_iter()
+            .take(number_of_top_n.to_usize().expect("safe: u32 -> usize"))
+            .map(|(v, count)| ElementCount {
+                value: Element::Float(v.into_inner()),
+                count,
+            })
+            .collect(),
+    )
 }
 
 struct MinMax<T> {
