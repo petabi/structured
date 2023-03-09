@@ -16,8 +16,8 @@ use strum_macros::EnumString;
 
 use crate::stats::{
     convert_time_intervals, describe, n_largest_count, n_largest_count_datetime,
-    n_largest_count_enum, n_largest_count_float64, ColumnStatistics, Element, GroupCount,
-    GroupElement, GroupElementCount, NLargestCount,
+    n_largest_count_enum, n_largest_count_float64, ColumnStatistics, GroupCount, GroupElement,
+    GroupElementCount,
 };
 
 type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
@@ -137,6 +137,7 @@ impl Table {
         r_enum_maps: &ReverseEnumMaps,
         time_intervals: &Arc<Vec<u32>>,
         numbers_of_top_n: &Arc<Vec<u32>>,
+        precision: i32,
     ) -> Vec<ColumnStatistics> {
         self.columns
             .iter()
@@ -170,21 +171,14 @@ impl Table {
                             .expect("top N number for each column should exist."),
                     )
                 } else if let ColumnType::Float64 = column_types[index] {
-                    if let (Some(Element::Float(min)), Some(Element::Float(max))) =
-                        (description.min(), description.max())
-                    {
-                        n_largest_count_float64(
-                            column,
-                            rows,
-                            *numbers_of_top_n
-                                .get(index)
-                                .expect("top N number for each column should exist."),
-                            *min,
-                            *max,
-                        )
-                    } else {
-                        NLargestCount::default()
-                    }
+                    n_largest_count_float64(
+                        column,
+                        rows,
+                        *numbers_of_top_n
+                            .get(index)
+                            .expect("top N number for each column should exist."),
+                        precision,
+                    )
                 } else {
                     n_largest_count(
                         column,
@@ -780,6 +774,7 @@ mod tests {
 
     #[test]
     fn description_test() {
+        use crate::Element;
         let schema = Schema::new(vec![
             Field::new("", DataType::Int64, false),
             Field::new("", DataType::Utf8, false),
@@ -800,7 +795,7 @@ mod tests {
             Ipv4Addr::new(127, 0, 0, 2).into(),
             Ipv4Addr::new(127, 0, 0, 3).into(),
         ];
-        let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
+        let c3_v: Vec<f64> = vec![2.2, 2.203, 2.8, 5.30123, 7.0, 10320.811, 5.3009];
         let c4_v: Vec<i64> = vec![
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
@@ -880,6 +875,7 @@ mod tests {
             &HashMap::new(),
             &time_intervals,
             &numbers_of_top_n,
+            2,
         );
 
         assert_eq!(4, stat[0].n_largest_count.number_of_elements());
@@ -891,7 +887,7 @@ mod tests {
             Element::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
             stat[2].n_largest_count.top_n()[1].value
         );
-        assert_eq!(3, stat[3].n_largest_count.number_of_elements());
+        assert_eq!(5, stat[3].n_largest_count.number_of_elements());
         assert_eq!(
             Element::DateTime(
                 NaiveDate::from_ymd_opt(2019, 9, 22)
@@ -922,6 +918,7 @@ mod tests {
             &c5_r_map,
             &time_intervals,
             &numbers_of_top_n,
+            2,
         );
 
         assert_eq!(4, stat[0].n_largest_count.number_of_elements());
@@ -933,7 +930,7 @@ mod tests {
             Element::IpAddr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3))),
             stat[2].n_largest_count.top_n()[1].value
         );
-        assert_eq!(3, stat[3].n_largest_count.number_of_elements());
+        assert_eq!(5, stat[3].n_largest_count.number_of_elements());
         assert_eq!(
             Element::DateTime(
                 NaiveDate::from_ymd_opt(2019, 9, 22)

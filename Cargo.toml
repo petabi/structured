@@ -23,13 +23,14 @@ chrono = { version = "^0.4.9", default-features = false, features = ["serde"] }
 csv-core = "0.1"
 itertools = "0.10"
 num-traits = "0.2"
+ordered-float = { version = "3.4.0", default-features = false }
 percent-encoding = "2.1"
 regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "^1.0.13", features = ["preserve_order"] }
 statistical = "1"
 strum = "0.24"
 strum_macros = "0.24"
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "^1.0.13", features = ["preserve_order"] }
 thiserror = "1"
 
 [dev-dependencies]
