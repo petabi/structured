@@ -2,9 +2,9 @@
 name = "structured"
 version = "0.11.0"
 authors = [
-    "Min Kim <msk@dolbo.net>",
-    "Min Shao <min.shao1988@gmail.com>",
-    "Sehkone Kim <sehkone@petabi.com>",
+  "Min Kim <msk@dolbo.net>",
+  "Min Shao <min.shao1988@gmail.com>",
+  "Sehkone Kim <sehkone@petabi.com>",
 ]
 edition = "2021"
 rust-version = "1.62"
@@ -18,7 +18,7 @@ exclude = ["./github"]
 codecov = { repository = "petabi/structured", service = "github" }
 
 [dependencies]
-arrow = "34"
+arrow = "35"
 chrono = { version = "^0.4.9", default-features = false, features = ["serde"] }
 csv-core = "0.1"
 itertools = "0.10"
