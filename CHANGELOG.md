@@ -9,7 +9,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Updated arrow to version 35.
+- Updated arrow to version 36.
 
 ## [0.11.0] - 2023-03-10
 
