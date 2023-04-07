@@ -10,6 +10,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Updated arrow to version 36.
+- Use `i64` for `event_id`.
 
 ## [0.11.0] - 2023-03-10
 

@@ -9,3 +9,5 @@ pub use stats::{
     GroupElementCount, NLargestCount,
 };
 pub use table::{Column, ColumnType, Table};
+
+pub(crate) type Id = i64;

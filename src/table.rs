@@ -19,6 +19,7 @@ use crate::stats::{
     n_largest_count_enum, n_largest_count_float64, ColumnStatistics, GroupCount, GroupElement,
     GroupElementCount,
 };
+use crate::Id;
 
 type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
 /// The data type of a table column.
@@ -55,7 +56,7 @@ impl From<ColumnType> for DataType {
 pub struct Table {
     schema: Arc<Schema>,
     columns: Vec<Column>,
-    event_ids: HashMap<u64, usize>,
+    event_ids: HashMap<Id, usize>,
 }
 
 impl Table {
@@ -67,7 +68,7 @@ impl Table {
     pub fn new(
         schema: Arc<Schema>,
         columns: Vec<Column>,
-        event_ids: HashMap<u64, usize>,
+        event_ids: HashMap<Id, usize>,
     ) -> Result<Self, &'static str> {
         let len = if let Some(col) = columns.first() {
             col.len()
@@ -286,7 +287,7 @@ impl Table {
     }
 
     #[must_use]
-    pub fn event_index(&self, eventid: u64) -> Option<&usize> {
+    pub fn event_index(&self, eventid: Id) -> Option<&usize> {
         self.event_ids.get(&eventid)
     }
 }
