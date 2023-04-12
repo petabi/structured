@@ -19,7 +19,6 @@ use crate::stats::{
     n_largest_count_enum, n_largest_count_float64, ColumnStatistics, GroupCount, GroupElement,
     GroupElementCount,
 };
-use crate::Id;
 
 type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
 /// The data type of a table column.
@@ -53,13 +52,16 @@ impl From<ColumnType> for DataType {
 /// Structured data represented in a column-oriented form.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct Table {
+pub struct Table<I> {
     schema: Arc<Schema>,
     columns: Vec<Column>,
-    event_ids: HashMap<Id, usize>,
+    event_ids: HashMap<I, usize>,
 }
 
-impl Table {
+impl<I> Table<I>
+where
+    I: std::hash::Hash + PartialEq + Eq,
+{
     /// Creates a new `Table` with the given `schema` and `columns`.
     ///
     /// # Errors
@@ -68,7 +70,7 @@ impl Table {
     pub fn new(
         schema: Arc<Schema>,
         columns: Vec<Column>,
-        event_ids: HashMap<Id, usize>,
+        event_ids: HashMap<I, usize>,
     ) -> Result<Self, &'static str> {
         let len = if let Some(col) = columns.first() {
             col.len()
@@ -287,8 +289,8 @@ impl Table {
     }
 
     #[must_use]
-    pub fn event_index(&self, eventid: Id) -> Option<&usize> {
-        self.event_ids.get(&eventid)
+    pub fn event_index(&self, eventid: &I) -> Option<&usize> {
+        self.event_ids.get(eventid)
     }
 }
 
@@ -683,7 +685,7 @@ mod tests {
 
     #[test]
     fn table_new() {
-        let table = Table::new(Arc::new(Schema::empty()), Vec::new(), HashMap::new())
+        let table = Table::<usize>::new(Arc::new(Schema::empty()), Vec::new(), HashMap::new())
             .expect("creating an empty `Table` should not fail");
         assert_eq!(table.num_columns(), 0);
         assert_eq!(table.num_rows(), 0);
@@ -755,7 +757,8 @@ mod tests {
         let c1 = Column::try_from_slice::<Int64Type>(&c1_v).unwrap();
         let c2 = Column::try_from_slice::<Int64Type>(&c2_v).unwrap();
         let c_v: Vec<Column> = vec![c0, c1, c2];
-        let table = Table::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
+        let table =
+            Table::<i64>::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
         let column_types = Arc::new(vec![
             ColumnType::DateTime,
             ColumnType::Int64,
@@ -857,7 +860,8 @@ mod tests {
         let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::from(c6_v));
         let c6 = Column::from(c6_a);
         let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
-        let table = Table::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
+        let table =
+            Table::<i64>::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
         let column_types = Arc::new(vec![
             ColumnType::Int64,
             ColumnType::Utf8,
