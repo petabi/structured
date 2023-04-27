@@ -9,14 +9,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Use generic type for `event_id` in `Table`
+- Implemented the usage of a generic type for `event_id` in `Table`.
+- Updated arrow to version 38.
 
 ## [0.12.0] - 2023-04-07
 
 ### Changed
 
 - Updated arrow to version 36.
-- Use `i64` for `event_id`.
+- Used `i64` for `event_id`.
 
 ## [0.11.0] - 2023-03-10
 
