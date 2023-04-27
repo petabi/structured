@@ -485,8 +485,8 @@ impl PartialEq for Column {
     fn eq(&self, other: &Self) -> bool {
         let data_type = match (self.arrays.first(), other.arrays.first()) {
             (Some(x_arr), Some(y_arr)) => {
-                if x_arr.data().data_type() == y_arr.data().data_type() {
-                    x_arr.data().data_type().clone()
+                if x_arr.to_data().data_type() == y_arr.to_data().data_type() {
+                    x_arr.to_data().data_type().clone()
                 } else {
                     return false;
                 }
