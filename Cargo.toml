@@ -29,7 +29,7 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "^1.0.13", features = ["preserve_order"] }
 statistical = "1"
-strum = "0.24"
+strum = "0.25"
 strum_macros = "0.24"
 thiserror = "1"
 
