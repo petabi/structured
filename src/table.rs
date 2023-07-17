@@ -132,6 +132,12 @@ where
         }
     }
 
+    /// Returns the schema of the table.
+    #[must_use]
+    pub fn schema(&self) -> &Arc<Schema> {
+        &self.schema
+    }
+
     #[must_use]
     pub fn statistics(
         &self,
@@ -700,6 +706,25 @@ mod tests {
         let column = Column::default();
         assert_eq!(column.len(), 0);
         assert_eq!(column.string_try_get(0), Ok(None));
+    }
+
+    #[test]
+    fn check_schema() {
+        let schema = Schema::new(vec![
+            Field::new("ts", DataType::Timestamp(TimeUnit::Second, None), false),
+            Field::new("len", DataType::Int64, false),
+            Field::new("last_time", DataType::Int64, false),
+        ]);
+        let table = Table::<usize>::new(Arc::new(schema), Vec::new(), HashMap::new())
+            .expect("creating an empty `Table` should not fail");
+
+        let ret_schema = table.schema();
+        assert_eq!(ret_schema.all_fields().len(), 3);
+        let ret_field_ts = ret_schema.field_with_name("ts");
+        assert!(ret_field_ts.is_ok());
+        if let Ok(ts) = ret_field_ts {
+            assert_eq!(ts.name(), "ts");
+        }
     }
 
     #[test]
