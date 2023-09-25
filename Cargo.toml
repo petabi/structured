@@ -23,7 +23,7 @@ chrono = { version = "^0.4.9", default-features = false, features = ["serde"] }
 csv-core = "0.1"
 itertools = "0.11"
 num-traits = "0.2"
-ordered-float = { version = "3.4.0", default-features = false }
+ordered-float = { version = "4.1.0", default-features = false }
 percent-encoding = "2.1"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
