@@ -138,6 +138,9 @@ where
         &self.schema
     }
 
+    /// # Panics
+    ///
+    /// Panics if time intervals or number of top n is not defined.
     #[must_use]
     pub fn statistics(
         &self,
@@ -208,6 +211,9 @@ where
     }
 
     // count means including only positive values. Implement other functions like sum_group_by, mean_group_by, etc. later.
+    /// # Panics
+    ///
+    /// Panics if columns are not defined.
     #[must_use]
     pub fn count_group_by(
         &self,
@@ -346,12 +352,10 @@ impl Column {
             Ok(i) => (i, 0),
             Err(i) => (i - 1, index - self.cumlen[i - 1]),
         };
-        let typed_arr = if let Some(arr) = self.arrays[array_index]
+        let Some(typed_arr) = self.arrays[array_index]
             .as_any()
             .downcast_ref::<PrimitiveArray<T>>()
-        {
-            arr
-        } else {
+        else {
             return Err(TypeError());
         };
         Ok(Some(typed_arr.value(inner_index)))
@@ -370,12 +374,10 @@ impl Column {
             Ok(i) => (i, 0),
             Err(i) => (i - 1, index - self.cumlen[i - 1]),
         };
-        let typed_arr = if let Some(arr) = self.arrays[array_index]
+        let Some(typed_arr) = self.arrays[array_index]
             .as_any()
             .downcast_ref::<BinaryArray>()
-        {
-            arr
-        } else {
+        else {
             return Err(TypeError());
         };
         Ok(Some(typed_arr.value(inner_index)))
@@ -394,12 +396,10 @@ impl Column {
             Ok(i) => (i, 0),
             Err(i) => (i - 1, index - self.cumlen[i - 1]),
         };
-        let typed_arr = if let Some(arr) = self.arrays[array_index]
+        let Some(typed_arr) = self.arrays[array_index]
             .as_any()
             .downcast_ref::<StringArray>()
-        {
-            arr
-        } else {
+        else {
             return Err(TypeError());
         };
         Ok(Some(typed_arr.value(inner_index)))
@@ -430,9 +430,7 @@ impl Column {
     {
         let mut arrays: Vec<&T> = Vec::with_capacity(self.arrays.len());
         for arr in &self.arrays {
-            let typed_arr = if let Some(arr) = arr.as_any().downcast_ref::<T>() {
-                arr
-            } else {
+            let Some(typed_arr) = arr.as_any().downcast_ref::<T>() else {
                 return Err(TypeError());
             };
             arrays.push(typed_arr);
@@ -739,42 +737,50 @@ mod tests {
                 .unwrap()
                 .and_hms_opt(0, 0, 10)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2020, 1, 1)
                 .unwrap()
                 .and_hms_opt(0, 0, 13)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2020, 1, 1)
                 .unwrap()
                 .and_hms_opt(0, 0, 15)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2020, 1, 1)
                 .unwrap()
                 .and_hms_opt(0, 0, 22)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2020, 1, 1)
                 .unwrap()
                 .and_hms_opt(0, 0, 22)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2020, 1, 1)
                 .unwrap()
                 .and_hms_opt(0, 0, 31)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2020, 1, 1)
                 .unwrap()
                 .and_hms_opt(0, 0, 33)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2020, 1, 1)
                 .unwrap()
                 .and_hms_opt(0, 1, 1)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
         ];
         let c1_v: Vec<i64> = vec![1, 32, 3, 5, 2, 1, 3, 24];
         let c2_v: Vec<i64> = vec![2, 33, 4, 6, 3, 2, 4, 25];
@@ -830,37 +836,44 @@ mod tests {
                 .unwrap()
                 .and_hms_opt(6, 10, 11)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(6, 15, 11)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 21)
                 .unwrap()
                 .and_hms_opt(20, 10, 11)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 21)
                 .unwrap()
                 .and_hms_opt(20, 10, 11)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(6, 45, 11)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 21)
                 .unwrap()
                 .and_hms_opt(8, 10, 11)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(9, 10, 11)
                 .unwrap()
-                .timestamp(),
+                .timestamp_nanos_opt()
+                .unwrap(),
         ];
         let tester = vec!["t1".to_string(), "t2".to_string(), "t3".to_string()];
         let sid = tester.iter().map(|s| hash(s)).collect::<Vec<_>>();
