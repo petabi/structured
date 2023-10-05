@@ -544,9 +544,9 @@ pub(crate) fn convert_time_intervals(
         .unwrap()
         .map(|v| {
             // The first interval of each day should start with 00:00:00.
-            let mut ts = v / ((24 * 60 * 60) * (24 * 60 * 60) * A_BILLION);
-            ts += (v - ts) / time_interval * time_interval;
-            NaiveDateTime::from_timestamp_opt(ts, 0).unwrap_or_default()
+            let mut interval_idx = v / A_BILLION;
+            interval_idx = (interval_idx / time_interval) * time_interval;
+            NaiveDateTime::from_timestamp_opt(interval_idx, 0).unwrap_or_default()
         })
         .collect::<Vec<_>>()
 }
@@ -622,4 +622,162 @@ where
         }
     }
     Some(MinMax { min, max })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Column;
+    use arrow::datatypes::Int64Type;
+    use chrono::NaiveDate;
+
+    #[test]
+    fn test_convert_time_intervals() {
+        let c4_v: Vec<i64> = vec![
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(6, 10, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(6, 15, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 21)
+                .unwrap()
+                .and_hms_opt(20, 10, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 21)
+                .unwrap()
+                .and_hms_opt(20, 10, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(6, 45, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 21)
+                .unwrap()
+                .and_hms_opt(8, 10, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(9, 10, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+        ];
+        let c4 = Column::try_from_slice::<Int64Type>(&c4_v).unwrap();
+        let rows = vec![0_usize, 3, 1, 4, 2, 6, 5];
+        let time_interval = 3600;
+        let rst = convert_time_intervals(&c4, &rows, time_interval);
+        assert_eq!(rst.len(), 7);
+        assert_eq!(
+            rst.first(),
+            Some(
+                &NaiveDate::from_ymd_opt(2019, 9, 22)
+                    .unwrap()
+                    .and_hms_opt(6, 0, 0)
+                    .unwrap()
+            )
+        );
+        assert_eq!(
+            rst.last(),
+            Some(
+                &NaiveDate::from_ymd_opt(2019, 9, 21)
+                    .unwrap()
+                    .and_hms_opt(8, 0, 0)
+                    .unwrap()
+            )
+        )
+    }
+
+    #[test]
+    fn test_the_first_interval_of_each_day() {
+        let c4_v: Vec<i64> = vec![
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(0, 3, 20)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(0, 9, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(0, 10, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(1, 15, 11)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+        ];
+        let c4 = Column::try_from_slice::<Int64Type>(&c4_v).unwrap();
+        let rows = vec![0_usize, 1, 2, 3];
+        let time_interval = 3600;
+        let rst = convert_time_intervals(&c4, &rows, time_interval);
+        let converted = vec![
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(1, 0, 0)
+                .unwrap(),
+        ];
+        for (seq, c) in converted.iter().enumerate() {
+            assert_eq!(rst.get(seq), Some(c));
+        }
+
+        let time_interval = 600;
+        let rst = convert_time_intervals(&c4, &rows, time_interval);
+        let converted = vec![
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(0, 10, 0)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2019, 9, 22)
+                .unwrap()
+                .and_hms_opt(1, 10, 0)
+                .unwrap(),
+        ];
+        for (seq, c) in converted.iter().enumerate() {
+            assert_eq!(rst.get(seq), Some(c));
+        }
+    }
 }
