@@ -261,6 +261,7 @@ where
 fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
     Ok(
         chrono::NaiveDateTime::parse_from_str(str::from_utf8(v)?, "%Y-%m-%dT%H:%M:%S%.f%:z")?
+            .and_utc()
             .timestamp_nanos_opt()
             .unwrap_or_default(),
     )
@@ -577,7 +578,7 @@ mod tests {
         let c3 = Column::try_from_slice::<Float64Type>(&c3_v).unwrap();
         let c4 = Column::try_from_slice::<Int64Type>(
             c4_v.iter()
-                .map(|v| v.timestamp())
+                .map(|v| v.and_utc().timestamp())
                 .collect::<Vec<_>>()
                 .as_slice(),
         )
@@ -631,7 +632,9 @@ mod tests {
             FieldParser::float64(),
             FieldParser::timestamp_with_parser(move |v| {
                 let val: String = v.iter().map(|&c| c as char).collect();
-                Ok(NaiveDateTime::parse_from_str(&val, "%Y-%m-%d %H:%M:%S")?.timestamp())
+                Ok(NaiveDateTime::parse_from_str(&val, "%Y-%m-%d %H:%M:%S")?
+                    .and_utc()
+                    .timestamp())
             }),
             FieldParser::Utf8,
             FieldParser::Binary,

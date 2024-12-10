@@ -1,5 +1,5 @@
 use arrow::datatypes::{Float64Type, Int64Type, UInt32Type, UInt64Type};
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use statistical::{mean, population_standard_deviation};
@@ -546,7 +546,9 @@ pub(crate) fn convert_time_intervals(
             // The first interval of each day should start with 00:00:00.
             let mut interval_idx = v / A_BILLION;
             interval_idx = (interval_idx / time_interval) * time_interval;
-            NaiveDateTime::from_timestamp_opt(interval_idx, 0).unwrap_or_default()
+            DateTime::from_timestamp(interval_idx, 0)
+                .unwrap_or_default()
+                .naive_utc()
         })
         .collect::<Vec<_>>()
 }
@@ -638,42 +640,49 @@ mod tests {
                 .unwrap()
                 .and_hms_opt(6, 10, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(6, 15, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 21)
                 .unwrap()
                 .and_hms_opt(20, 10, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 21)
                 .unwrap()
                 .and_hms_opt(20, 10, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(6, 45, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 21)
                 .unwrap()
                 .and_hms_opt(8, 10, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(9, 10, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
         ];
@@ -709,24 +718,28 @@ mod tests {
                 .unwrap()
                 .and_hms_opt(0, 3, 20)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(0, 9, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(0, 10, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(1, 15, 11)
                 .unwrap()
+                .and_utc()
                 .timestamp_nanos_opt()
                 .unwrap(),
         ];
