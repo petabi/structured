@@ -602,7 +602,7 @@ where
     }
 }
 
-impl<'a, 'b, T> Iterator for PrimitiveIter<'a, 'b, T>
+impl<T> Iterator for PrimitiveIter<'_, '_, T>
 where
     T: ArrowPrimitiveType,
 {
@@ -629,7 +629,7 @@ impl<'a, 'b> BinaryIter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Iterator for BinaryIter<'a, 'b> {
+impl<'a> Iterator for BinaryIter<'a, '_> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -653,7 +653,7 @@ impl<'a, 'b> StringIter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Iterator for StringIter<'a, 'b> {
+impl<'a> Iterator for StringIter<'a, '_> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
