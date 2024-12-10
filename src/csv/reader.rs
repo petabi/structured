@@ -491,7 +491,7 @@ mod tests {
             Ipv4Addr::new(127, 0, 0, 2),
             Ipv4Addr::new(127, 0, 0, 3),
         ];
-        let c3_v: Vec<f64> = vec![2.2, 3.14, 122.8, 5.3123, 7.0, 10320.811, 5.5];
+        let c3_v: Vec<f64> = vec![2.2, 3.11, 122.8, 5.3123, 7.0, 10320.811, 5.5];
         let c4_v: Vec<NaiveDateTime> = vec![
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
