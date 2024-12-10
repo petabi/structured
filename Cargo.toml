@@ -36,3 +36,6 @@ thiserror = "1"
 [dev-dependencies]
 ahash = "0.8"
 serde_test = "1.0"
+
+[lints.clippy]
+pedantic = "warn"
