@@ -580,11 +580,6 @@ impl From<Arc<dyn Array>> for Column {
     }
 }
 
-pub trait ArrayType {
-    type Array: Array;
-    type Elem;
-}
-
 #[derive(Debug, Eq, PartialEq)]
 pub struct TypeError();
 
