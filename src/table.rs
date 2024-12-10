@@ -702,7 +702,7 @@ mod tests {
             .expect("creating an empty `Table` should not fail");
 
         let ret_schema = table.schema();
-        assert_eq!(ret_schema.all_fields().len(), 3);
+        assert_eq!(ret_schema.flattened_fields().len(), 3);
         let ret_field_ts = ret_schema.field_with_name("ts");
         assert!(ret_field_ts.is_ok());
         if let Ok(ts) = ret_field_ts {
