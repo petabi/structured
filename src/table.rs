@@ -610,11 +610,9 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let selected = self.selected.next()?;
-        if let Ok(elem) = self.column.primitive_try_get::<T>(*selected) {
-            elem
-        } else {
-            None
-        }
+        self.column
+            .primitive_try_get::<T>(*selected)
+            .unwrap_or_default()
     }
 }
 
@@ -634,11 +632,7 @@ impl<'a> Iterator for BinaryIter<'a, '_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let selected = self.selected.next()?;
-        if let Ok(elem) = self.column.binary_try_get(*selected) {
-            elem
-        } else {
-            None
-        }
+        self.column.binary_try_get(*selected).unwrap_or_default()
     }
 }
 
@@ -658,11 +652,7 @@ impl<'a> Iterator for StringIter<'a, '_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let selected = self.selected.next()?;
-        if let Ok(elem) = self.column.string_try_get(*selected) {
-            elem
-        } else {
-            None
-        }
+        self.column.string_try_get(*selected).unwrap_or_default()
     }
 }
 
