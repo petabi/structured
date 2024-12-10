@@ -708,7 +708,7 @@ mod tests {
                     .and_hms_opt(8, 0, 0)
                     .unwrap()
             )
-        )
+        );
     }
 
     #[test]

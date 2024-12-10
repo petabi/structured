@@ -479,6 +479,7 @@ mod tests {
     use serde_test::{assert_tokens, Token};
     use std::net::Ipv4Addr;
 
+    #[allow(clippy::too_many_lines)]
     fn test_data() -> (Vec<Vec<u8>>, Vec<Column>) {
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
         let c1_v: Vec<_> = vec!["111a qwer", "b", "c", "d", "b", "111a qwer", "111a qwer"];
@@ -551,7 +552,7 @@ mod tests {
             let mut row: Vec<u8> = vec![];
             row.extend(c0.to_string().into_bytes());
             row.extend_from_slice(b",");
-            row.extend(c1.to_string().into_bytes());
+            row.extend((*c1).to_string().into_bytes());
             row.extend_from_slice(b",");
             row.extend(c2.to_string().into_bytes());
             row.extend_from_slice(b",");
@@ -559,7 +560,7 @@ mod tests {
             row.extend_from_slice(b",");
             row.extend(c4.format(fmt).to_string().into_bytes());
             row.extend_from_slice(b",");
-            row.extend(c5.to_string().into_bytes());
+            row.extend((*c5).to_string().into_bytes());
             row.extend_from_slice(b",");
             row.extend_from_slice(c6);
             data.push(row);
@@ -640,7 +641,11 @@ mod tests {
             FieldParser::Binary,
         ];
         let (data, columns) = test_data();
-        let mut reader = Reader::new(data.iter().map(|d| d.as_slice()), data.len(), &parsers);
+        let mut reader = Reader::new(
+            data.iter().map(std::vec::Vec::as_slice),
+            data.len(),
+            &parsers,
+        );
         let result: Vec<Column> = if let Some(batch) = reader.next_batch().unwrap() {
             batch.columns().iter().map(|c| c.clone().into()).collect()
         } else {

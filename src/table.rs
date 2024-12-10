@@ -780,9 +780,8 @@ mod tests {
         let c0 = Column::try_from_slice::<Int64Type>(&c0_v).unwrap();
         let c1 = Column::try_from_slice::<Int64Type>(&c1_v).unwrap();
         let c2 = Column::try_from_slice::<Int64Type>(&c2_v).unwrap();
-        let c_v: Vec<Column> = vec![c0, c1, c2];
-        let table =
-            Table::<i64>::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
+        let table = Table::<i64>::new(Arc::new(schema), vec![c0, c1, c2], HashMap::new())
+            .expect("invalid columns");
         let column_types = Arc::new(vec![
             ColumnType::DateTime,
             ColumnType::Int64,
@@ -801,6 +800,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn description_test() {
         use crate::Element;
         let schema = Schema::new(vec![
@@ -897,9 +897,12 @@ mod tests {
         let c5 = Column::try_from_slice::<UInt64Type>(&c5_v).unwrap();
         let c6_a: Arc<dyn Array> = Arc::new(BinaryArray::from(c6_v));
         let c6 = Column::from(c6_a);
-        let c_v: Vec<Column> = vec![c0, c1, c2, c3, c4, c5, c6];
-        let table =
-            Table::<i64>::new(Arc::new(schema), c_v, HashMap::new()).expect("invalid columns");
+        let table = Table::<i64>::new(
+            Arc::new(schema),
+            vec![c0, c1, c2, c3, c4, c5, c6],
+            HashMap::new(),
+        )
+        .expect("invalid columns");
         let column_types = Arc::new(vec![
             ColumnType::Int64,
             ColumnType::Utf8,
