@@ -523,7 +523,7 @@ mod tests {
                 .unwrap(),
         ];
 
-        let fields = vec!["t1", "t2", "t3"];
+        let fields = ["t1", "t2", "t3"];
         let c5_v: Vec<_> = vec![
             fields[0], fields[1], fields[1], fields[1], fields[1], fields[1], fields[2],
         ];

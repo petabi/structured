@@ -747,7 +747,7 @@ mod tests {
         let rows = vec![0_usize, 1, 2, 3];
         let time_interval = 3600;
         let rst = convert_time_intervals(&c4, &rows, time_interval);
-        let converted = vec![
+        let converted = [
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(0, 0, 0)
@@ -771,7 +771,7 @@ mod tests {
 
         let time_interval = 600;
         let rst = convert_time_intervals(&c4, &rows, time_interval);
-        let converted = vec![
+        let converted = [
             NaiveDate::from_ymd_opt(2019, 9, 22)
                 .unwrap()
                 .and_hms_opt(0, 0, 0)

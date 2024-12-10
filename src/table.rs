@@ -875,7 +875,7 @@ mod tests {
                 .timestamp_nanos_opt()
                 .unwrap(),
         ];
-        let tester = vec!["t1".to_string(), "t2".to_string(), "t3".to_string()];
+        let tester = ["t1".to_string(), "t2".to_string(), "t3".to_string()];
         let sid = tester.iter().map(|s| hash(s)).collect::<Vec<_>>();
         let c5_v: Vec<u64> = vec![sid[0], sid[1], sid[1], sid[1], sid[1], sid[1], sid[2]];
         let c6_v: Vec<&[u8]> = vec![
