@@ -1,7 +1,8 @@
 //! Definitions to help handling CSV data as a set of records.
 
-use arrow::array::Array;
 use std::sync::Arc;
+
+use arrow::array::Array;
 
 /// A batch of multi-field data.
 #[derive(Clone)]

@@ -1,4 +1,8 @@
-use crate::record;
+use std::fmt;
+use std::io::{BufRead, BufReader, Read};
+use std::str::{self, FromStr};
+use std::sync::Arc;
+
 use arrow::array::{Array, BinaryBuilder, PrimitiveBuilder, StringBuilder};
 use arrow::datatypes::{
     ArrowPrimitiveType, DataType, Field, Float64Type, Int64Type, Schema, UInt32Type,
@@ -6,10 +10,8 @@ use arrow::datatypes::{
 use arrow::error::ArrowError;
 use csv_core::ReadRecordResult;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::io::{BufRead, BufReader, Read};
-use std::str::{self, FromStr};
-use std::sync::Arc;
+
+use crate::record;
 
 pub struct Record {
     fields: Vec<u8>,
@@ -34,7 +36,7 @@ impl Record {
             outlen += nout;
             endlen += nend;
             match res {
-                ReadRecordResult::InputEmpty => continue,
+                ReadRecordResult::InputEmpty => {}
                 ReadRecordResult::OutputFull => {
                     fields.resize(std::cmp::max(4, fields.len().checked_mul(2).unwrap()), 0);
                 }
@@ -72,7 +74,7 @@ impl Record {
             outlen += nout;
             endlen += nend;
             match res {
-                ReadRecordResult::InputEmpty => continue,
+                ReadRecordResult::InputEmpty => {}
                 ReadRecordResult::OutputFull => {
                     fields.resize(std::cmp::max(4, fields.len().checked_mul(2).unwrap()), 0);
                 }
@@ -471,20 +473,22 @@ pub fn infer_schema<R: Read>(reader: &mut BufReader<R>) -> Result<Schema, String
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::table::Column;
+    use std::net::Ipv4Addr;
+
     use arrow::array::{Array, BinaryArray, StringArray};
     use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
     use serde_test::{assert_tokens, Token};
-    use std::net::Ipv4Addr;
+
+    use super::*;
+    use crate::table::Column;
 
     #[allow(clippy::too_many_lines)]
     fn test_data() -> (Vec<Vec<u8>>, Vec<Column>) {
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
         let c1_v: Vec<_> = vec!["111a qwer", "b", "c", "d", "b", "111a qwer", "111a qwer"];
         let c2_v: Vec<Ipv4Addr> = vec![
-            Ipv4Addr::new(127, 0, 0, 1),
+            Ipv4Addr::LOCALHOST,
             Ipv4Addr::new(127, 0, 0, 2),
             Ipv4Addr::new(127, 0, 0, 3),
             Ipv4Addr::new(127, 0, 0, 4),

@@ -1,3 +1,10 @@
+use std::collections::HashMap;
+use std::iter::{Flatten, Iterator};
+use std::marker::PhantomData;
+use std::slice;
+use std::sync::Arc;
+use std::vec;
+
 use arrow::array::{
     Array, BinaryArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
     PrimitiveArray, PrimitiveBuilder, StringArray, UInt16Array, UInt32Array, UInt64Array,
@@ -6,12 +13,6 @@ use arrow::array::{
 use arrow::datatypes::{ArrowPrimitiveType, DataType, Int64Type, Schema, TimeUnit};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::iter::{Flatten, Iterator};
-use std::marker::PhantomData;
-use std::slice;
-use std::sync::Arc;
-use std::vec;
 use strum_macros::EnumString;
 
 use crate::stats::{
@@ -36,7 +37,6 @@ pub enum ColumnType {
 }
 
 impl From<ColumnType> for DataType {
-    #[must_use]
     fn from(ct: ColumnType) -> Self {
         match ct {
             ColumnType::Int64 => Self::Int64,
@@ -105,7 +105,7 @@ where
     }
 
     /// Returns an `Iterator` for columns.
-    pub fn columns(&self) -> slice::Iter<Column> {
+    pub fn columns(&self) -> slice::Iter<'_, Column> {
         self.columns.iter()
     }
 
@@ -485,7 +485,6 @@ impl Column {
 }
 
 impl PartialEq for Column {
-    #[must_use]
     fn eq(&self, other: &Self) -> bool {
         let data_type = match (self.arrays.first(), other.arrays.first()) {
             (Some(x_arr), Some(y_arr)) => {
@@ -569,7 +568,6 @@ impl PartialEq for Column {
 }
 
 impl From<Arc<dyn Array>> for Column {
-    #[must_use]
     fn from(array: Arc<dyn Array>) -> Self {
         let len = array.len();
         Self {
@@ -658,13 +656,15 @@ impl<'a> Iterator for StringIter<'a, '_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::Column;
+    use std::hash::{Hash, Hasher};
+    use std::net::{IpAddr, Ipv4Addr};
+
     use ahash::AHasher;
     use arrow::datatypes::{Field, Float64Type, UInt32Type, UInt64Type};
     use chrono::NaiveDate;
-    use std::hash::{Hash, Hasher};
-    use std::net::{IpAddr, Ipv4Addr};
+
+    use super::*;
+    use crate::Column;
 
     fn hash(seq: &str) -> u64 {
         let mut hasher = AHasher::default();
@@ -815,7 +815,7 @@ mod tests {
         let c0_v: Vec<i64> = vec![1, 3, 3, 5, 2, 1, 3];
         let c1_v: Vec<_> = vec!["111a qwer", "b", "c", "d", "b", "111a qwer", "111a qwer"];
         let c2_v: Vec<u32> = vec![
-            Ipv4Addr::new(127, 0, 0, 1).into(),
+            Ipv4Addr::LOCALHOST.into(),
             Ipv4Addr::new(127, 0, 0, 2).into(),
             Ipv4Addr::new(127, 0, 0, 3).into(),
             Ipv4Addr::new(127, 0, 0, 4).into(),
