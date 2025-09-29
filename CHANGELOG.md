@@ -9,8 +9,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Requires Rust 1.81 or newer.
-- Updated arrow to version 54.
+- Requires Rust 1.84 or newer.
+- Updated arrow to version 56.
 
 ## [0.15.0] - 2024-12-10
 
