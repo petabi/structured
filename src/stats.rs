@@ -1,13 +1,14 @@
-use arrow::datatypes::{Float64Type, Int64Type, UInt32Type, UInt64Type};
-use chrono::{DateTime, NaiveDateTime};
-use num_traits::ToPrimitive;
-use serde::{Deserialize, Serialize};
-use statistical::{mean, population_standard_deviation};
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 use std::iter::Iterator;
 use std::net::{IpAddr, Ipv4Addr};
+
+use arrow::datatypes::{Float64Type, Int64Type, UInt32Type, UInt64Type};
+use chrono::{DateTime, NaiveDateTime};
+use num_traits::ToPrimitive;
+use serde::{Deserialize, Serialize};
+use statistical::{mean, population_standard_deviation};
 
 use crate::table::{Column, ColumnType};
 
@@ -628,10 +629,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::Column;
     use arrow::datatypes::Int64Type;
     use chrono::NaiveDate;
+
+    use super::*;
+    use crate::Column;
 
     #[test]
     fn test_convert_time_intervals() {
