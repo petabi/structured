@@ -151,8 +151,8 @@ impl From<std::num::ParseIntError> for ParseError {
     }
 }
 
-impl From<chrono::format::ParseError> for ParseError {
-    fn from(error: chrono::format::ParseError) -> Self {
+impl From<jiff::Error> for ParseError {
+    fn from(error: jiff::Error) -> Self {
         Self {
             inner: Box::new(error),
         }
@@ -261,12 +261,13 @@ where
 
 /// Parses timestamp in RFC 3339 format.
 fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
-    Ok(
-        chrono::NaiveDateTime::parse_from_str(str::from_utf8(v)?, "%Y-%m-%dT%H:%M:%S%.f%:z")?
-            .and_utc()
-            .timestamp_nanos_opt()
-            .unwrap_or_default(),
-    )
+    let dt = jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f%:z", str::from_utf8(v)?)?;
+    Ok(dt
+        .to_zoned(jiff::tz::TimeZone::UTC)?
+        .timestamp()
+        .as_nanosecond()
+        .try_into()
+        .unwrap_or_default())
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -476,8 +477,8 @@ mod tests {
     use std::net::Ipv4Addr;
 
     use arrow::array::{Array, BinaryArray, StringArray};
-    use chrono::{NaiveDate, NaiveDateTime};
     use itertools::izip;
+    use jiff::civil::{date, DateTime};
     use serde_test::{assert_tokens, Token};
 
     use super::*;
@@ -497,35 +498,14 @@ mod tests {
             Ipv4Addr::new(127, 0, 0, 3),
         ];
         let c3_v: Vec<f64> = vec![2.2, 3.11, 122.8, 5.3123, 7.0, 10320.811, 5.5];
-        let c4_v: Vec<NaiveDateTime> = vec![
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(6, 10, 11)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(6, 15, 11)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 21)
-                .unwrap()
-                .and_hms_opt(20, 10, 11)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 21)
-                .unwrap()
-                .and_hms_opt(20, 10, 11)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(6, 45, 11)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 21)
-                .unwrap()
-                .and_hms_opt(8, 10, 11)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(9, 10, 11)
-                .unwrap(),
+        let c4_v: Vec<DateTime> = vec![
+            date(2019, 9, 22).at(6, 10, 11, 0),
+            date(2019, 9, 22).at(6, 15, 11, 0),
+            date(2019, 9, 21).at(20, 10, 11, 0),
+            date(2019, 9, 21).at(20, 10, 11, 0),
+            date(2019, 9, 22).at(6, 45, 11, 0),
+            date(2019, 9, 21).at(8, 10, 11, 0),
+            date(2019, 9, 22).at(9, 10, 11, 0),
         ];
 
         let fields = ["t1", "t2", "t3"];
@@ -543,7 +523,6 @@ mod tests {
         ];
 
         let mut data = vec![];
-        let fmt = "%Y-%m-%d %H:%M:%S";
         for (c0, c1, c2, c3, c4, c5, c6) in izip!(
             c0_v.iter(),
             c1_v.iter(),
@@ -562,7 +541,7 @@ mod tests {
             row.extend_from_slice(b",");
             row.extend(c3.to_string().into_bytes());
             row.extend_from_slice(b",");
-            row.extend(c4.format(fmt).to_string().into_bytes());
+            row.extend(c4.strftime("%Y-%m-%d %H:%M:%S").to_string().into_bytes());
             row.extend_from_slice(b",");
             row.extend((*c5).to_string().into_bytes());
             row.extend_from_slice(b",");
@@ -583,7 +562,12 @@ mod tests {
         let c3 = Column::try_from_slice::<Float64Type>(&c3_v).unwrap();
         let c4 = Column::try_from_slice::<Int64Type>(
             c4_v.iter()
-                .map(|v| v.and_utc().timestamp())
+                .map(|v| {
+                    v.to_zoned(jiff::tz::TimeZone::UTC)
+                        .unwrap()
+                        .timestamp()
+                        .as_second()
+                })
                 .collect::<Vec<_>>()
                 .as_slice(),
         )
@@ -637,9 +621,11 @@ mod tests {
             FieldParser::float64(),
             FieldParser::timestamp_with_parser(move |v| {
                 let val: String = v.iter().map(|&c| c as char).collect();
-                Ok(NaiveDateTime::parse_from_str(&val, "%Y-%m-%d %H:%M:%S")?
-                    .and_utc()
-                    .timestamp())
+                let dt = jiff::civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", &val)?;
+                Ok(dt
+                    .to_zoned(jiff::tz::TimeZone::UTC)?
+                    .timestamp()
+                    .as_second())
             }),
             FieldParser::Utf8,
             FieldParser::Binary,

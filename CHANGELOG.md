@@ -9,6 +9,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Replaced `chrono` with `jiff` for date/time handling.
 - Requires Rust 1.84 or newer.
 - Updated arrow to version 56.
 
