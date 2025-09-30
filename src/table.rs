@@ -661,7 +661,7 @@ mod tests {
 
     use ahash::AHasher;
     use arrow::datatypes::{Field, Float64Type, UInt32Type, UInt64Type};
-    use chrono::NaiveDate;
+    use jiff::civil::date;
 
     use super::*;
     use crate::Column;
@@ -718,61 +718,69 @@ mod tests {
             Field::new("", DataType::Int64, false),
         ]);
         let c0_v: Vec<i64> = vec![
-            NaiveDate::from_ymd_opt(2020, 1, 1)
+            date(2020, 1, 1)
+                .at(0, 0, 10, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 0, 10)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1)
+            date(2020, 1, 1)
+                .at(0, 0, 13, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 0, 13)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1)
+            date(2020, 1, 1)
+                .at(0, 0, 15, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 0, 15)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1)
+            date(2020, 1, 1)
+                .at(0, 0, 22, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 0, 22)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1)
+            date(2020, 1, 1)
+                .at(0, 0, 22, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 0, 22)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1)
+            date(2020, 1, 1)
+                .at(0, 0, 31, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 0, 31)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1)
+            date(2020, 1, 1)
+                .at(0, 0, 33, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 0, 33)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1)
+            date(2020, 1, 1)
+                .at(0, 1, 1, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 1, 1)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
         ];
         let c1_v: Vec<i64> = vec![1, 32, 3, 5, 2, 1, 3, 24];
@@ -825,54 +833,61 @@ mod tests {
         ];
         let c3_v: Vec<f64> = vec![2.2, 2.203, 2.8, 5.30123, 7.0, 10320.811, 5.3009];
         let c4_v: Vec<i64> = vec![
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(6, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(6, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(6, 15, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(6, 15, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 21)
+            date(2019, 9, 21)
+                .at(20, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(20, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 21)
+            date(2019, 9, 21)
+                .at(20, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(20, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(6, 45, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(6, 45, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 21)
+            date(2019, 9, 21)
+                .at(8, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(8, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(9, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(9, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
         ];
         let tester = ["t1".to_string(), "t2".to_string(), "t3".to_string()];
@@ -935,12 +950,7 @@ mod tests {
         );
         assert_eq!(5, stat[3].n_largest_count.number_of_elements());
         assert_eq!(
-            Element::DateTime(
-                NaiveDate::from_ymd_opt(2019, 9, 22)
-                    .unwrap()
-                    .and_hms_opt(6, 0, 0)
-                    .unwrap()
-            ),
+            Element::DateTime(date(2019, 9, 22).at(6, 0, 0, 0)),
             stat[4].n_largest_count.top_n()[0].value
         );
         assert_eq!(3, stat[5].n_largest_count.number_of_elements());
@@ -978,12 +988,7 @@ mod tests {
         );
         assert_eq!(5, stat[3].n_largest_count.number_of_elements());
         assert_eq!(
-            Element::DateTime(
-                NaiveDate::from_ymd_opt(2019, 9, 22)
-                    .unwrap()
-                    .and_hms_opt(6, 0, 0)
-                    .unwrap()
-            ),
+            Element::DateTime(date(2019, 9, 22).at(6, 0, 0, 0)),
             stat[4].n_largest_count.top_n()[0].value
         );
         assert_eq!(

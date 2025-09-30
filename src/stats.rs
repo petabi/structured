@@ -5,7 +5,7 @@ use std::iter::Iterator;
 use std::net::{IpAddr, Ipv4Addr};
 
 use arrow::datatypes::{Float64Type, Int64Type, UInt32Type, UInt64Type};
-use chrono::{DateTime, NaiveDateTime};
+use jiff::civil::DateTime;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use statistical::{mean, population_standard_deviation};
@@ -26,7 +26,7 @@ pub enum Element {
     Text(String),
     Binary(Vec<u8>),
     IpAddr(IpAddr),
-    DateTime(NaiveDateTime),
+    DateTime(DateTime),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Eq, Hash)]
@@ -36,7 +36,7 @@ pub enum GroupElement {
     Enum(String),
     Text(String),
     IpAddr(IpAddr),
-    DateTime(NaiveDateTime),
+    DateTime(DateTime),
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
@@ -508,7 +508,7 @@ pub(crate) fn n_largest_count_datetime(
         values.iter(),
         rows.len(),
         n_largest_count,
-        &NaiveDateTime,
+        &DateTime,
         Element::DateTime,
         number_of_top_n
     );
@@ -524,7 +524,7 @@ pub(crate) fn convert_time_intervals(
     column: &Column,
     rows: &[usize],
     time_interval: u32,
-) -> Vec<NaiveDateTime> {
+) -> Vec<DateTime> {
     const A_BILLION: i64 = 1_000_000_000;
     let time_interval = if time_interval > MAX_TIME_INTERVAL {
         MAX_TIME_INTERVAL
@@ -547,9 +547,10 @@ pub(crate) fn convert_time_intervals(
             // The first interval of each day should start with 00:00:00.
             let mut interval_idx = v / A_BILLION;
             interval_idx = (interval_idx / time_interval) * time_interval;
-            DateTime::from_timestamp(interval_idx, 0)
+            jiff::Timestamp::from_second(interval_idx)
                 .unwrap_or_default()
-                .naive_utc()
+                .to_zoned(jiff::tz::TimeZone::UTC)
+                .datetime()
         })
         .collect::<Vec<_>>()
 }
@@ -630,7 +631,7 @@ where
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::Int64Type;
-    use chrono::NaiveDate;
+    use jiff::civil::date;
 
     use super::*;
     use crate::Column;
@@ -638,54 +639,61 @@ mod tests {
     #[test]
     fn test_convert_time_intervals() {
         let c4_v: Vec<i64> = vec![
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(6, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(6, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(6, 15, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(6, 15, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 21)
+            date(2019, 9, 21)
+                .at(20, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(20, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 21)
+            date(2019, 9, 21)
+                .at(20, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(20, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(6, 45, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(6, 45, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 21)
+            date(2019, 9, 21)
+                .at(8, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(8, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(9, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(9, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
         ];
         let c4 = Column::try_from_slice::<Int64Type>(&c4_v).unwrap();
@@ -693,56 +701,44 @@ mod tests {
         let time_interval = 3600;
         let rst = convert_time_intervals(&c4, &rows, time_interval);
         assert_eq!(rst.len(), 7);
-        assert_eq!(
-            rst.first(),
-            Some(
-                &NaiveDate::from_ymd_opt(2019, 9, 22)
-                    .unwrap()
-                    .and_hms_opt(6, 0, 0)
-                    .unwrap()
-            )
-        );
-        assert_eq!(
-            rst.last(),
-            Some(
-                &NaiveDate::from_ymd_opt(2019, 9, 21)
-                    .unwrap()
-                    .and_hms_opt(8, 0, 0)
-                    .unwrap()
-            )
-        );
+        assert_eq!(rst.first(), Some(&date(2019, 9, 22).at(6, 0, 0, 0)));
+        assert_eq!(rst.last(), Some(&date(2019, 9, 21).at(8, 0, 0, 0)));
     }
 
     #[test]
     fn test_the_first_interval_of_each_day() {
         let c4_v: Vec<i64> = vec![
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(0, 3, 20, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 3, 20)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(0, 9, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 9, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(0, 10, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(0, 10, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
+            date(2019, 9, 22)
+                .at(1, 15, 11, 0)
+                .to_zoned(jiff::tz::TimeZone::UTC)
                 .unwrap()
-                .and_hms_opt(1, 15, 11)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
+                .timestamp()
+                .as_nanosecond()
+                .try_into()
                 .unwrap(),
         ];
         let c4 = Column::try_from_slice::<Int64Type>(&c4_v).unwrap();
@@ -750,22 +746,10 @@ mod tests {
         let time_interval = 3600;
         let rst = convert_time_intervals(&c4, &rows, time_interval);
         let converted = [
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(1, 0, 0)
-                .unwrap(),
+            date(2019, 9, 22).at(0, 0, 0, 0),
+            date(2019, 9, 22).at(0, 0, 0, 0),
+            date(2019, 9, 22).at(0, 0, 0, 0),
+            date(2019, 9, 22).at(1, 0, 0, 0),
         ];
         for (seq, c) in converted.iter().enumerate() {
             assert_eq!(rst.get(seq), Some(c));
@@ -774,22 +758,10 @@ mod tests {
         let time_interval = 600;
         let rst = convert_time_intervals(&c4, &rows, time_interval);
         let converted = [
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(0, 10, 0)
-                .unwrap(),
-            NaiveDate::from_ymd_opt(2019, 9, 22)
-                .unwrap()
-                .and_hms_opt(1, 10, 0)
-                .unwrap(),
+            date(2019, 9, 22).at(0, 0, 0, 0),
+            date(2019, 9, 22).at(0, 0, 0, 0),
+            date(2019, 9, 22).at(0, 10, 0, 0),
+            date(2019, 9, 22).at(1, 10, 0, 0),
         ];
         for (seq, c) in converted.iter().enumerate() {
             assert_eq!(rst.get(seq), Some(c));
