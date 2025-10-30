@@ -963,7 +963,7 @@ mod tests {
             5,
             sid.iter()
                 .zip(tester.iter())
-                .map(|(id, s)| (*id, vec![s.to_string()]))
+                .map(|(id, s)| (*id, vec![s.clone()]))
                 .collect(),
         )]
         .into_iter()
