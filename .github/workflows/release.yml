@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+'  # Matches x.y.z version tags
+      - "[0-9]+.[0-9]+.[0-9]+" # Matches x.y.z version tags
 
 jobs:
   release:
@@ -12,15 +12,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      - name: Extract package metadata
+        id: package
+        run: |
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "name=$(grep '^name = "' Cargo.toml | head -1 | sed 's/^name = "\(.*\)"$/\1/')" >> $GITHUB_OUTPUT
 
       - name: Extract release notes from CHANGELOG.md
         id: release_notes
         run: |
           # Find the section for this version in CHANGELOG.md
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ steps.package.outputs.version }}"
           # Look for the version heading (## [x.y.z] or ## x.y.z)
           SECTION_START=$(grep -n "^## \[$VERSION\]\|^## $VERSION" CHANGELOG.md | head -1 | cut -d: -f1)
 
@@ -54,8 +56,8 @@ jobs:
         run: |
           # Decode the base64-encoded release notes
           echo "${{ steps.release_notes.outputs.release_notes_b64 }}" | base64 -d > release_notes.txt
-          gh release create ${{ steps.version.outputs.version }} \
-            --title "${{ steps.version.outputs.version }}" \
+          gh release create ${{ steps.package.outputs.version }} \
+            --title "${{ steps.package.outputs.name }} ${{ steps.package.outputs.version }}" \
             --notes-file release_notes.txt \
             --repo ${{ github.repository }}
         env:
