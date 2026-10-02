@@ -6,9 +6,9 @@ use std::sync::Arc;
 use std::vec;
 
 use arrow::array::{
-    Array, BinaryArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
-    PrimitiveArray, PrimitiveBuilder, StringArray, UInt16Array, UInt32Array, UInt64Array,
-    UInt8Array,
+    Array, BinaryArray, Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array,
+    PrimitiveArray, PrimitiveBuilder, StringArray, UInt8Array, UInt16Array, UInt32Array,
+    UInt64Array,
 };
 use arrow::datatypes::{ArrowPrimitiveType, DataType, Int64Type, Schema, TimeUnit};
 use num_traits::ToPrimitive;
@@ -16,9 +16,9 @@ use serde::{Deserialize, Serialize};
 use strum_macros::EnumString;
 
 use crate::stats::{
-    convert_time_intervals, describe, n_largest_count, n_largest_count_datetime,
-    n_largest_count_enum, n_largest_count_float64, ColumnStatistics, GroupCount, GroupElement,
-    GroupElementCount,
+    ColumnStatistics, GroupCount, GroupElement, GroupElementCount, convert_time_intervals,
+    describe, n_largest_count, n_largest_count_datetime, n_largest_count_enum,
+    n_largest_count_float64,
 };
 
 type ReverseEnumMaps = HashMap<usize, HashMap<u64, Vec<String>>>;
