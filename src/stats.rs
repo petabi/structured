@@ -569,7 +569,7 @@ where
     for (k, v) in &count {
         top_n.push(((*k).clone(), *v));
     }
-    top_n.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    top_n.sort_unstable_by_key(|a| std::cmp::Reverse(a.1));
     top_n
 }
 
@@ -589,7 +589,7 @@ where
         .into_iter()
         .collect();
 
-    freqs.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    freqs.sort_unstable_by_key(|a| std::cmp::Reverse(a.1));
 
     (
         freqs.len(),
