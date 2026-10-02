@@ -478,8 +478,8 @@ mod tests {
 
     use arrow::array::{Array, BinaryArray, StringArray};
     use itertools::izip;
-    use jiff::civil::{date, DateTime};
-    use serde_test::{assert_tokens, Token};
+    use jiff::civil::{DateTime, date};
+    use serde_test::{Token, assert_tokens};
 
     use super::*;
     use crate::table::Column;
@@ -602,11 +602,13 @@ mod tests {
             Field::new("", DataType::Utf8, false),
         ];
 
-        assert!(schema
-            .fields()
-            .into_iter()
-            .zip(answers.into_iter())
-            .all(|(a, b)| a.data_type() == b.data_type()));
+        assert!(
+            schema
+                .fields()
+                .into_iter()
+                .zip(answers.into_iter())
+                .all(|(a, b)| a.data_type() == b.data_type())
+        );
     }
 
     #[test]
