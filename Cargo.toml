@@ -20,21 +20,19 @@ codecov = { repository = "petabi/structured", service = "github" }
 [dependencies]
 arrow = "57.3.2"
 csv-core = "0.1"
-itertools = "0.14"
 jiff = { version = "0.2", features = ["serde"] }
 num-traits = "0.2"
 ordered-float = { version = "5", default-features = false }
-percent-encoding = "2.1"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 statify = "0.2"
 strum = "0.27"
 strum_macros = "0.27"
-thiserror = "2"
 
 [dev-dependencies]
 ahash = "0.8"
+itertools = "0.14"
 serde_test = "1.0"
 
 [lints.clippy]
