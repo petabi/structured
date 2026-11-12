@@ -10,6 +10,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Requires Rust 1.85 or newer.
+- Updated Apache Arrow to version 57.3.2. Consumers that pass Arrow types
+  through the public API must use Arrow 57.
 
 ## [0.16.0] - 2025-10-06
 
