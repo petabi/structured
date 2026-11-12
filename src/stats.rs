@@ -8,7 +8,7 @@ use arrow::datatypes::{Float64Type, Int64Type, UInt32Type, UInt64Type};
 use jiff::civil::DateTime;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
-use statistical::{mean, population_standard_deviation};
+use statify::Stats;
 
 use crate::table::{Column, ColumnType};
 
@@ -237,12 +237,22 @@ macro_rules! min_max {
     }};
 }
 
-macro_rules! mean_deviation {
-    ( $vf:expr, $t1:ty, $d:expr ) => {
-        let m = mean(&$vf);
-        $d.mean = Some(m);
-        $d.s_deviation = Some(population_standard_deviation(&$vf, Some(m)));
-    };
+fn set_mean_deviation(values: &Vec<f64>, description: &mut Description) {
+    let mut mean = values
+        .mean()
+        .unwrap_or_else(|_| panic!("population variance requires at least one data point"));
+    // The previous sum started at +0.0, so a column of negative zeros had a +0.0 mean.
+    if mean.to_bits() == (-0.0_f64).to_bits()
+        && values
+            .iter()
+            .all(|value| value.to_bits() == (-0.0_f64).to_bits())
+    {
+        mean = 0.0;
+    }
+    let deviation = values.std_dev_pop().expect("validated nonempty sample");
+    assert!(deviation >= 0.0, "negative sum of square root deviations");
+    description.mean = Some(mean);
+    description.s_deviation = Some(deviation);
 }
 
 macro_rules! top_n {
@@ -281,14 +291,14 @@ pub(crate) fn describe(column: &Column, rows: &[usize], column_type: ColumnType)
             let iter = column.primitive_iter::<Int64Type>(rows).unwrap();
             #[allow(clippy::cast_precision_loss)] // 52-bit precision is good enough
             let f_values: Vec<f64> = iter.map(|v: i64| v as f64).collect();
-            mean_deviation!(f_values, i64, description);
+            set_mean_deviation(&f_values, &mut description);
         }
         ColumnType::Float64 => {
             let iter = column.primitive_iter::<Float64Type>(rows).unwrap();
             min_max!(iter, description, Element::Float);
             let iter = column.primitive_iter::<Float64Type>(rows).unwrap();
             let values = iter.collect::<Vec<_>>();
-            mean_deviation!(values, f64, description);
+            set_mean_deviation(&values, &mut description);
         }
         _ => (),
     }
@@ -635,6 +645,57 @@ mod tests {
 
     use super::*;
     use crate::Column;
+
+    #[test]
+    fn describe_integer_column_reports_population_statistics() {
+        let column = Column::try_from_slice::<Int64Type>(&[1, 2, 3]).unwrap();
+        let description = describe(&column, &[0, 1, 2], ColumnType::Int64);
+        assert_eq!(description.mean(), Some(2.0));
+        assert_eq!(description.std_deviation(), Some((2.0_f64 / 3.0).sqrt()));
+    }
+
+    #[test]
+    fn describe_float_column_preserves_statistics() {
+        let cases: &[(&[f64], f64, f64)] = &[
+            (&[1.0, 2.0, 3.0], 2.0, (2.0_f64 / 3.0).sqrt()),
+            (&[1e155], 1e155, 0.0),
+            (
+                &[1e16, 1e16 + 2.0, 1e16 + 4.0],
+                1e16 + 2.0,
+                (8.0_f64 / 3.0).sqrt(),
+            ),
+            (&[-0.0, -0.0], 0.0, 0.0),
+            (&[-f64::from_bits(1), 0.0], -0.0, 0.0),
+        ];
+        for &(values, mean, deviation) in cases {
+            let column = Column::try_from_slice::<Float64Type>(values).unwrap();
+            let rows: Vec<usize> = (0..values.len()).collect();
+            let description = describe(&column, &rows, ColumnType::Float64);
+            assert_eq!(description.mean().unwrap().to_bits(), mean.to_bits());
+            assert_eq!(
+                description.std_deviation().unwrap().to_bits(),
+                deviation.to_bits()
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "population variance requires at least one data point")]
+    fn describe_float_column_panics_for_empty_selection() {
+        let column = Column::try_from_slice::<Float64Type>(&[1.0]).unwrap();
+        let _ = describe(&column, &[], ColumnType::Float64);
+    }
+
+    #[test]
+    fn describe_float_column_panics_for_nonfinite_values() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let result = std::panic::catch_unwind(|| {
+                let column = Column::try_from_slice::<Float64Type>(&[value]).unwrap();
+                describe(&column, &[0], ColumnType::Float64)
+            });
+            assert!(result.is_err(), "expected a panic for {value}");
+        }
+    }
 
     #[test]
     fn test_convert_time_intervals() {
