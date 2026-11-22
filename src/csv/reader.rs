@@ -263,7 +263,7 @@ where
 fn parse_timestamp(v: &[u8]) -> Result<i64, ParseError> {
     let dt = jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f%:z", str::from_utf8(v)?)?;
     Ok(dt
-        .to_zoned(jiff::tz::TimeZone::UTC)?
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)?
         .timestamp()
         .as_nanosecond()
         .try_into()
@@ -563,7 +563,7 @@ mod tests {
         let c4 = Column::try_from_slice::<Int64Type>(
             c4_v.iter()
                 .map(|v| {
-                    v.to_zoned(jiff::tz::TimeZone::UTC)
+                    v.to_zoned_datetime(jiff::tz::TimeZone::UTC)
                         .unwrap()
                         .timestamp()
                         .as_second()
@@ -625,7 +625,7 @@ mod tests {
                 let val: String = v.iter().map(|&c| c as char).collect();
                 let dt = jiff::civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", &val)?;
                 Ok(dt
-                    .to_zoned(jiff::tz::TimeZone::UTC)?
+                    .to_zoned_datetime(jiff::tz::TimeZone::UTC)?
                     .timestamp()
                     .as_second())
             }),

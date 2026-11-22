@@ -559,7 +559,7 @@ pub(crate) fn convert_time_intervals(
             interval_idx = (interval_idx / time_interval) * time_interval;
             jiff::Timestamp::from_second(interval_idx)
                 .unwrap_or_default()
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .datetime()
         })
         .collect::<Vec<_>>()
@@ -702,7 +702,7 @@ mod tests {
         let c4_v: Vec<i64> = vec![
             date(2019, 9, 22)
                 .at(6, 10, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -710,7 +710,7 @@ mod tests {
                 .unwrap(),
             date(2019, 9, 22)
                 .at(6, 15, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -718,7 +718,7 @@ mod tests {
                 .unwrap(),
             date(2019, 9, 21)
                 .at(20, 10, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -726,7 +726,7 @@ mod tests {
                 .unwrap(),
             date(2019, 9, 21)
                 .at(20, 10, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -734,7 +734,7 @@ mod tests {
                 .unwrap(),
             date(2019, 9, 22)
                 .at(6, 45, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -742,7 +742,7 @@ mod tests {
                 .unwrap(),
             date(2019, 9, 21)
                 .at(8, 10, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -750,7 +750,7 @@ mod tests {
                 .unwrap(),
             date(2019, 9, 22)
                 .at(9, 10, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -771,7 +771,7 @@ mod tests {
         let c4_v: Vec<i64> = vec![
             date(2019, 9, 22)
                 .at(0, 3, 20, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -779,7 +779,7 @@ mod tests {
                 .unwrap(),
             date(2019, 9, 22)
                 .at(0, 9, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -787,7 +787,7 @@ mod tests {
                 .unwrap(),
             date(2019, 9, 22)
                 .at(0, 10, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
@@ -795,7 +795,7 @@ mod tests {
                 .unwrap(),
             date(2019, 9, 22)
                 .at(1, 15, 11, 0)
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .unwrap()
                 .timestamp()
                 .as_nanosecond()
