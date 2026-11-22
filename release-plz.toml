@@ -1,5 +1,4 @@
 [workspace]
-git_only = true
 release_always = false
 git_tag_name = "{{ version }}"
 git_release_name = "{{ package }} {{ version }}"
