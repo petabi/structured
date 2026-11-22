@@ -7,9 +7,8 @@ authors = [
   "Sehkone Kim <sehkone@petabi.com>",
 ]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Data structures to handle large, structured data."
-homepage = "https://github.com/petabi/structured"
 repository = "https://github.com/petabi/structured"
 license = "Apache-2.0"
 exclude = ["./github"]
@@ -18,21 +17,21 @@ exclude = ["./github"]
 codecov = { repository = "petabi/structured", service = "github" }
 
 [dependencies]
-arrow = "57.3.2"
+arrow = "60"
 csv-core = "0.1"
-jiff = { version = "0.2", features = ["serde"] }
+jiff = { version = "1", features = ["serde"] }
 num-traits = "0.2"
 ordered-float = { version = "5", default-features = false }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 statify = "0.2"
-strum = "0.27"
-strum_macros = "0.27"
+strum = "0.28"
+strum_macros = "0.28"
 
 [dev-dependencies]
 ahash = "0.8"
-itertools = "0.14"
+itertools = "0.15"
 serde_test = "1.0"
 
 [lints.clippy]

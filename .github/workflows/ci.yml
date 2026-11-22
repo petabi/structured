@@ -124,7 +124,7 @@ jobs:
         call-ref: ${{ inputs.ref }}
     - name: Install Rust
       if: ${{ !cancelled() && steps.gate.outputs.cargo == 'true' && steps.gate.conclusion == 'success' }}
-      uses: dtolnay/rust-toolchain@1.85
+      uses: dtolnay/rust-toolchain@1.88
     - name: Cache Rust
       if: ${{ !cancelled() && steps.gate.outputs.cargo == 'true' && steps.gate.conclusion == 'success' }}
       uses: Swatinem/rust-cache@v2
