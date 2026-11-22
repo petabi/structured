@@ -7,7 +7,7 @@ authors = [
   "Sehkone Kim <sehkone@petabi.com>",
 ]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Data structures to handle large, structured data."
 repository = "https://github.com/petabi/structured"
 license = "Apache-2.0"
