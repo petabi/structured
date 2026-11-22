@@ -85,8 +85,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+  # `check` is skipped on workflow_run; without always(), success() sees that
+  # skipped ancestor and skips this job even when release succeeded.
   release-pr:
     needs: release
+    if: ${{ always() && !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -114,7 +117,10 @@ jobs:
 
   check-release-pr:
     needs: release-pr
-    if: needs.release-pr.outputs.prs_created == 'true'
+    if: >-
+      ${{ always() && !cancelled() &&
+          needs.release-pr.result == 'success' &&
+          needs.release-pr.outputs.prs_created == 'true' }}
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
@@ -124,7 +130,10 @@ jobs:
 
   check-release-changelog:
     needs: release-pr
-    if: needs.release-pr.outputs.prs_created == 'true'
+    if: >-
+      ${{ always() && !cancelled() &&
+          needs.release-pr.result == 'success' &&
+          needs.release-pr.outputs.prs_created == 'true' }}
     uses: ./.github/workflows/changelog.yml
     permissions:
       pull-requests: read
