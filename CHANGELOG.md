@@ -5,6 +5,13 @@ file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0](https://github.com/petabi/structured/compare/0.17.0...0.18.0) - 2026-11-22
+
+### Changed
+
+- [**breaking**] raise MSRV to 1.88
+- *(deps)* [**breaking**] bump arrow to 60 and jiff to 1
+
 ## [0.17.0] - 2026-11-12
 
 ### Changed
