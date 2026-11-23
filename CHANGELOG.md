@@ -7,13 +7,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.18.0](https://github.com/petabi/structured/compare/0.17.0...0.18.0) - 2026-11-22
 
-### Other
+### Changed
 
-- remove unused .markdownlint.yaml ([#190](https://github.com/petabi/structured/pull/190))
-- run release-pr after skipped check job
 - [**breaking**] raise MSRV to 1.88
 - *(deps)* [**breaking**] bump arrow to 60 and jiff to 1
-- automate releases with release-plz and cut duplicate CI runs
 
 ## [0.17.0] - 2026-11-12
 
